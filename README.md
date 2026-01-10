@@ -25,6 +25,13 @@ A full-stack loan eligibility prediction system with:
   - Luxury Assets
 - Clean UI with instant results
 
+
+### 👨‍💻 Author
+Tejesh Yewale
+
+here is the url : https://loan-eligibility-ui.onrender.com/
+you can check out it's Deployed on Render...!!
+
 ## ▶ How to Run Locally
 
 ### Backend
@@ -41,8 +48,3 @@ Loan Approved ✅
 Score: 5 / 5
 
 
-###👨‍💻 Author
-Tejesh Yewale
-
-here is the url : https://loan-eligibility-ui.onrender.com/
-you can check out it's Deployed on Render...!!
