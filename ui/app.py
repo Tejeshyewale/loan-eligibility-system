@@ -2,7 +2,8 @@ import streamlit as st
 import requests
 
 # ---------------- CONFIG ----------------
-API_URL = "http://127.0.0.1:8000"
+API_URL = "https://loan-eligibility-system-jc8x.onrender.com"
+
 st.set_page_config(page_title="Loan Eligibility System", page_icon="🏦", layout="centered")
 
 # ---------------- UI HEADER ----------------
