@@ -45,6 +45,7 @@ streamlit run ui/app.py
 📊 Sample Output
 
 Loan Approved ✅
-Score: 5 / 5
+
+If you Like my repo then dont forget to star !!!
 
 
