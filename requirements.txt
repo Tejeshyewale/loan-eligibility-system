@@ -5,5 +5,5 @@ pandas
 scikit-learn
 python-jose
 streamlit
-requests
-
+requests 
+matplotlib 
