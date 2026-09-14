@@ -1,14 +1,11 @@
-"""Actionable suggestions based on top negative SHAP contributors."""
+"""Actionable suggestions based on top negative SHAP contributors.
 
-# TODO: move these thresholds to a config file in a later phase.
-CIBIL_GOOD_THRESHOLD = 700
-CIBIL_MIN_THRESHOLD = 650
-MAX_LOAN_INCOME_RATIO = 0.5
-MIN_ASSET_LOAN_RATIO = 1.0
-MIN_BANK_ASSET_VALUE = 100000
-MIN_TOTAL_ASSETS = 500000
-# Above this approval probability, the profile is strong - no fixes needed.
-STRONG_APPROVAL_THRESHOLD = 0.8
+All decision thresholds come from config/config.yaml via the validated
+singleton (loaded once, reused everywhere). No magic numbers here.
+"""
+from src.core.config_loader import config as _app_config
+
+_cfg = _app_config.suggestion_engine
 
 
 def generate_suggestions(ranked: list, raw_input: dict, top_n: int = 3,
@@ -18,7 +15,7 @@ def generate_suggestions(ranked: list, raw_input: dict, top_n: int = 3,
     Returns a positive confirmation (no improvement advice) when the
     application is already Approved with high confidence.
     """
-    if prediction == "Approved" and probability > STRONG_APPROVAL_THRESHOLD:
+    if prediction == "Approved" and probability > _cfg.strong_approval_threshold:
         return ["No changes needed - your application profile is strong."]
     suggestions = []
     negatives = [r for r in ranked if r["direction"] == "negative"][:top_n]
@@ -31,14 +28,14 @@ def generate_suggestions(ranked: list, raw_input: dict, top_n: int = 3,
 
     for item in negatives:
         feat = item["feature_name"]
-        if feat == "cibil_score" and val("cibil_score") < CIBIL_GOOD_THRESHOLD:
+        if feat == "cibil_score" and val("cibil_score") < _cfg.cibil_good_threshold:
             suggestions.append(
                 f"Improve your CIBIL score (currently {raw_input.get('cibil_score')}) "
-                f"to at least {CIBIL_GOOD_THRESHOLD} by paying dues on time."
+                f"to at least {_cfg.cibil_good_threshold} by paying dues on time."
             )
         elif feat == "loan_income_ratio":
             ratio = val("loan_amount") / max(val("income_annum"), 1)
-            if ratio > MAX_LOAN_INCOME_RATIO:
+            if ratio > _cfg.max_loan_income_ratio:
                 suggestions.append(
                     f"Reduce your loan-to-income ratio (currently {ratio:.2f}); "
                     f"request a smaller loan amount or show higher income."
@@ -48,10 +45,10 @@ def generate_suggestions(ranked: list, raw_input: dict, top_n: int = 3,
                 "Strengthen your asset base or lower the requested loan amount "
                 "to improve the asset-to-loan ratio."
             )
-        elif feat == "bank_asset_value" and val("bank_asset_value") < MIN_BANK_ASSET_VALUE:
+        elif feat == "bank_asset_value" and val("bank_asset_value") < _cfg.min_bank_asset_value:
             suggestions.append(
                 f"Increase your bank balance / savings (currently {raw_input.get('bank_asset_value')}) "
-                f"to at least {MIN_BANK_ASSET_VALUE}."
+                f"to at least {_cfg.min_bank_asset_value}."
             )
         elif feat == "income_annum":
             suggestions.append(
@@ -73,10 +70,12 @@ def generate_suggestions(ranked: list, raw_input: dict, top_n: int = 3,
             break
 
     # Fallbacks to always return 2-3 suggestions on rejection.
+    # Rendered from config so text stays in sync with thresholds;
+    # output strings are identical to the previous hardcoded versions.
     fallbacks = [
-        f"Build your CIBIL score above {CIBIL_GOOD_THRESHOLD} for better chances.",
-        "Keep the loan amount below 50% of annual income.",
-        "Maintain bank assets above 100000.",
+        f"Build your CIBIL score above {_cfg.cibil_good_threshold} for better chances.",
+        f"Keep the loan amount below {int(_cfg.max_loan_income_ratio * 100)}% of annual income.",
+        f"Maintain bank assets above {_cfg.min_bank_asset_value}.",
     ]
     for fb in fallbacks:
         if len(suggestions) >= 3:

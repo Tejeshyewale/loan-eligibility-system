@@ -1,0 +1,60 @@
+# Central business/decision thresholds for the loan eligibility system.
+# Single source of truth — modules must read from here via the validated
+# config singleton (config/__init__.py) instead of hardcoding magic numbers.
+# Values below are copied VERBATIM from the pre-refactor code so behaviour is unchanged.
+
+suggestion_engine:
+  # CIBIL score at/above which no CIBIL improvement is suggested.
+  # Was: CIBIL_GOOD_THRESHOLD = 700 in src/core/suggestion_engine.py
+  # Also used in fallback text "Build your CIBIL score above 700...".
+  cibil_good_threshold: 700
+
+  # Lower CIBIL bound kept for future severity tiers (was defined but unused).
+  # Was: CIBIL_MIN_THRESHOLD = 650 in src/core/suggestion_engine.py
+  cibil_min_threshold: 650
+
+  # Loan is flagged when loan_amount / income_annum exceeds this ratio.
+  # Was: MAX_LOAN_INCOME_RATIO = 0.5 in src/core/suggestion_engine.py
+  # Also used in fallback text "Keep the loan amount below 50% of annual income."
+  max_loan_income_ratio: 0.5
+
+  # Asset-to-loan health bound kept for future use (was defined but unused).
+  # Was: MIN_ASSET_LOAN_RATIO = 1.0 in src/core/suggestion_engine.py
+  min_asset_loan_ratio: 1.0
+
+  # Bank savings below this trigger an "increase bank balance" suggestion.
+  # Was: MIN_BANK_ASSET_VALUE = 100000 in src/core/suggestion_engine.py
+  # Also used in fallback text "Maintain bank assets above 100000."
+  min_bank_asset_value: 100000
+
+  # Total-assets bound kept for future use (was defined but unused).
+  # Was: MIN_TOTAL_ASSETS = 500000 in src/core/suggestion_engine.py
+  min_total_assets: 500000
+
+  # Approved applications with P(approval) above this get "No changes needed".
+  # Was: STRONG_APPROVAL_THRESHOLD = 0.8 in src/core/suggestion_engine.py
+  strong_approval_threshold: 0.8
+
+  # Max suggestions returned (was hardcoded `[:3]` / `>= 3` checks).
+  max_suggestions: 3
+
+# Thresholds for the legacy heuristic endpoint src/api/predict.py.
+# Documented here for visibility; that endpoint still uses its own inline
+# checks (not yet refactored) but the values below mirror it exactly.
+heuristic_predict:
+  # Was: `if data.income >= 500000` in src/api/predict.py
+  min_income: 500000
+  # Was: `if data.cibil_score >= 700` in src/api/predict.py
+  min_cibil_score: 700
+  # Was: `if data.bank_assets >= 100000` in src/api/predict.py
+  min_bank_assets: 100000
+  # Was: `if data.luxury_assets >= 100000` in src/api/predict.py
+  min_luxury_assets: 100000
+  # Was: `if data.loan_amount <= data.income * 0.5` in src/api/predict.py
+  max_loan_income_ratio: 0.5
+  # Was: `approved = score >= 3` in src/api/predict.py
+  approval_min_score: 3
+
+# NOTE on src/core/explainability_engine.py: searched, no business/decision
+# thresholds found — only math (1.0 - P(rejected)), SHAP sign handling
+# (v >= 0), and field lists. Nothing to extract.
