@@ -1,6 +1,10 @@
 import pandas as pd
 import yaml
 
+from src.utils.logger import get_logger
+
+logger = get_logger(__name__)
+
 def load_schema(schema_path):
     with open(schema_path, "r") as file:
         schema = yaml.safe_load(file)
@@ -19,7 +23,7 @@ def validate_columns(df, schema_columns):
     if extra_cols:
         raise Exception(f"❌ Unexpected columns: {extra_cols}")
 
-    print("✅ Column name validation passed")
+    logger.info("Column name validation passed")
 
 def validate_data_types(df, schema_columns):
     for col, expected_type in schema_columns.items():
@@ -40,11 +44,11 @@ def validate_data_types(df, schema_columns):
             if not pd.api.types.is_object_dtype(actual_type):
                 raise Exception(f"❌ Column {col} should be object")
 
-    print("✅ Data type validation passed")
+    logger.info("Data type validation passed")
 
 
 def main():
-    print("🚀 STEP 2: Schema Validation Started")
+    logger.info("STEP 2: Schema Validation Started")
 
     df = pd.read_csv("data/raw/loan_approval_dataset.csv")
 
@@ -56,7 +60,7 @@ def main():
     validate_columns(df, schema_columns)
     validate_data_types(df, schema_columns)
 
-    print("🎉 STEP 2 COMPLETED: Schema validation successful")
+    logger.info("STEP 2 COMPLETED: Schema validation successful")
 
 if __name__ == "__main__":
     main()

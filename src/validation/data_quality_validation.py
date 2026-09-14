@@ -1,6 +1,10 @@
 import pandas as pd
 import os
 
+from src.utils.logger import get_logger
+
+logger = get_logger(__name__)
+
 RAW_DATA_PATH = "data/raw/loan_approval_dataset.csv"
 VALIDATED_DATA_PATH = "data/validated/clean_loan_data.csv"
 REJECTED_DATA_PATH = "data/rejected/rejected_records.csv"
@@ -75,16 +79,16 @@ def save_outputs(valid_df, rejected_df):
 
 
 def main():
-    print("🚀 STEP 3: Data Quality & Business Rule Validation Started")
+    logger.info("STEP 3: Data Quality & Business Rule Validation Started")
 
     df = load_data()
     valid_df, rejected_df = validate_data(df)
 
     save_outputs(valid_df, rejected_df)
 
-    print(f"✅ Valid records saved: {valid_df.shape[0]}")
-    print(f"❌ Rejected records saved: {rejected_df.shape[0]}")
-    print("🎉 STEP 3 COMPLETED")
+    logger.info(f"Valid records saved: {valid_df.shape[0]}")
+    logger.info(f"Rejected records saved: {rejected_df.shape[0]}")
+    logger.info("STEP 3 COMPLETED")
 
 if __name__ == "__main__":
     main()
