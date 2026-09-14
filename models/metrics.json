@@ -1,10 +1,10 @@
 {
-    "best_model": "XGBoost",
+    "best_model": "RandomForest",
     "metrics": {
-        "accuracy": 0.9988221436984688,
+        "accuracy": 1.0,
         "precision": 1.0,
-        "recall": 0.9967320261437909,
-        "f1": 0.9983633387888707,
+        "recall": 1.0,
+        "f1": 1.0,
         "roc_auc": 1.0,
         "confusion_matrix": [
             [
@@ -12,8 +12,8 @@
                 0
             ],
             [
-                1,
-                305
+                0,
+                306
             ]
         ]
     }

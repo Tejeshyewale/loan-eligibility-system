@@ -2,6 +2,7 @@ import pandas as pd
 import pickle
 import os
 import json
+import numpy as np
 import xgboost as xgb
 
 from sklearn.model_selection import train_test_split
@@ -35,6 +36,40 @@ from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler, OneHotEncoder
 
+# OOD blind-spot fix: nudge the boundary with a small number of synthetic
+# extreme-leverage rejects (low CIBIL + 10x-25x loan-to-income ratio).
+# Amounts stay inside the real data ranges (income 200k-9.9M, loan 300k-39.5M)
+# so this corrects coverage, not dominates (~75 rows vs ~3400 real train rows).
+N_SYNTHETIC_REJECTS = 75
+SYNTH_SEED = 42
+
+
+def generate_extreme_rejects(n=N_SYNTHETIC_REJECTS, seed=SYNTH_SEED):
+    """Build synthetic raw-format rows for obvious rejects.
+
+    Uses the exact CSV categorical format (leading spaces) so the
+    preprocessor treats them identically to real rows.
+    """
+    rng = np.random.default_rng(seed)
+    income_annum = rng.uniform(200000, 1200000, n)
+    ratio = rng.uniform(10, 25, n)
+    loan_amount = income_annum * ratio  # 2M-30M: inside real loan range
+    synth = pd.DataFrame({
+        "no_of_dependents": rng.integers(2, 6, n),
+        "education": " Not Graduate",
+        "self_employed": rng.choice([" No", " Yes"], size=n, p=[0.7, 0.3]),
+        "income_annum": income_annum,
+        "loan_amount": loan_amount,
+        "loan_term": rng.integers(8, 21, n),
+        "cibil_score": rng.integers(300, 451, n),
+        "residential_assets_value": rng.uniform(0, 500000, n),
+        "commercial_assets_value": 0.0,
+        "luxury_assets_value": rng.uniform(50000, 500000, n),
+        "bank_asset_value": rng.uniform(0, 200000, n),
+    })
+    return create_features(synth)
+
+
 def prepare_data(df):
     # Recreate engineered features
     df = create_features(df)
@@ -47,6 +82,14 @@ def prepare_data(df):
     y = le.fit_transform(y_raw)
 
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+    # OOD fix: augment TRAIN ONLY with synthetic extreme-leverage rejects
+    # (low CIBIL + 10x-25x loan-to-income). Test set stays purely real data.
+    synth = generate_extreme_rejects(n=N_SYNTHETIC_REJECTS, seed=SYNTH_SEED)
+    synth = synth[X_train.columns]  # safety: same column order as training frame
+    reject_label = int(le.transform([" Rejected"])[0])
+    X_train = pd.concat([X_train, synth], ignore_index=True)
+    y_train = np.concatenate([y_train, np.full(len(synth), reject_label)])
 
     numeric_features = [
         'no_of_dependents', 'income_annum', 'loan_amount', 'loan_term', 'cibil_score', 
@@ -98,7 +141,7 @@ def main():
     models = {
         "LogisticRegression": LogisticRegression(max_iter=1000),
         "RandomForest": RandomForestClassifier(n_estimators=200, random_state=42),
-        "XGBoost": xgb.XGBClassifier(n_estimators=150, learning_rate=0.05, max_depth=3, use_label_encoder=False, eval_metric='logloss')
+        "XGBoost": xgb.XGBClassifier(n_estimators=150, learning_rate=0.05, max_depth=4, min_child_weight=3, reg_lambda=1.5, subsample=0.8, use_label_encoder=False, eval_metric='logloss')
     }
 
     all_metrics = {}
