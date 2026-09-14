@@ -2,11 +2,13 @@ fastapi
 uvicorn
 sqlalchemy
 pandas
-scikit-learn
+scikit-learn==1.8.0
 python-jose
 streamlit
 requests 
 matplotlib 
 shap
-xgboost
+xgboost==3.2.0
 imbalanced-learn
+pyyaml
+pydantic
