@@ -17,6 +17,9 @@ from sklearn.preprocessing import OneHotEncoder, StandardScaler
 import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from src.features.feature_engineering import create_features
+from src.utils.logger import get_logger
+
+logger = get_logger(__name__)
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_PATH = os.path.join(BASE_DIR, "data", "validated", "clean_loan_data.csv")
@@ -52,14 +55,14 @@ def main():
     n_expected = int(getattr(model, "n_features_in_", 0) or 0)
     n_actual = len(list(preprocessor.get_feature_names_out()))
     assert n_expected == n_actual, f"mismatch after rebuild: model={n_expected} preprocessor={n_actual}"
-    print(f"OK: model expects {n_expected}, rebuilt preprocessor has {n_actual}")
+    logger.info(f"OK: model expects {n_expected}, rebuilt preprocessor has {n_actual}")
 
     backup = PREPROCESSOR_PATH + ".bak"
     shutil.copy2(PREPROCESSOR_PATH, backup)
     with open(PREPROCESSOR_PATH, "wb") as f:
         pickle.dump(preprocessor, f)
-    print(f"Overwrote {PREPROCESSOR_PATH} (backup at {backup})")
-    print("Features:", list(preprocessor.get_feature_names_out()))
+    logger.info(f"Overwrote {PREPROCESSOR_PATH} (backup at {backup})")
+    logger.info("Features: %s", list(preprocessor.get_feature_names_out()))
 
 
 if __name__ == "__main__":

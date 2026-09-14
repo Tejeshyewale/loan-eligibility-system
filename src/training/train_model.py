@@ -36,6 +36,10 @@ from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler, OneHotEncoder
 
+from src.utils.logger import get_logger
+
+logger = get_logger(__name__)
+
 # OOD blind-spot fix: nudge the boundary with a small number of synthetic
 # extreme-leverage rejects (low CIBIL + 10x-25x loan-to-income ratio).
 # Amounts stay inside the real data ranges (income 200k-9.9M, loan 300k-39.5M)
@@ -131,7 +135,7 @@ def evaluate_model(model, X_test, y_test):
     return metrics
 
 def main():
-    print("STEP 6: Model Training Started")
+    logger.info("STEP 6: Model Training Started")
 
     df = load_data()
     # preprocessor is now built dynamically in prepare_data
@@ -147,17 +151,17 @@ def main():
     all_metrics = {}
 
     for name, model in models.items():
-        print(f"Training {name}...")
+        logger.info(f"Training {name}...")
         model.fit(X_train, y_train)
         metrics = evaluate_model(model, X_test, y_test)
         all_metrics[name] = metrics
-        print(f"{name} ROC-AUC: {metrics['roc_auc']:.4f}")
+        logger.info(f"{name} ROC-AUC: {metrics['roc_auc']:.4f}")
 
     best_model_name = max(all_metrics, key=lambda k: all_metrics[k]["roc_auc"])
     best_model = models[best_model_name]
     best_metrics = all_metrics[best_model_name]
 
-    print(f"\nBest Model: {best_model_name}")
+    logger.info(f"Best Model: {best_model_name}")
 
     os.makedirs("models", exist_ok=True)
     with open(MODEL_PATH, "wb") as f:
@@ -177,8 +181,8 @@ def main():
     with open("models/all_metrics.json", "w") as f:
         json.dump(all_metrics, f, indent=4)
 
-    print("Best model trained & saved")
-    print("STEP 6 COMPLETED")
+    logger.info("Best model trained & saved")
+    logger.info("STEP 6 COMPLETED")
 
 if __name__ == "__main__":
     main()

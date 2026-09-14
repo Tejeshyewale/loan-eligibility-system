@@ -4,6 +4,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from src.features.feature_engineering import create_features
+from src.utils.logger import get_logger
+
+logger = get_logger(__name__)
 
 DATA_PATH = "data/validated/clean_loan_data.csv"
 MODEL_PATH = "models/gb_model.pkl"   # or rf_model.pkl
@@ -11,7 +14,7 @@ PREPROCESSOR_PATH = "models/preprocessor.pkl"
 
 
 def main():
-    print("🚀 STEP 7: Model Explainability Started")
+    logger.info("STEP 7: Model Explainability Started")
 
     # Load data
     df = pd.read_csv(DATA_PATH)
@@ -36,7 +39,7 @@ def main():
     # ===============================
     # 🌍 GLOBAL FEATURE IMPORTANCE
     # ===============================
-    print("📊 Global feature importance (model-native)")
+    logger.info("Global feature importance (model-native)")
 
     importances = model.feature_importances_
     indices = np.argsort(importances)[::-1][:15]
@@ -53,7 +56,7 @@ def main():
     # ===============================
     # 👤 LOCAL EXPLANATION (1 RECORD)
     # ===============================
-    print("📌 Local explanation (feature contribution proxy)")
+    logger.info("Local explanation (feature contribution proxy)")
 
     sample_idx = 0
     sample = X_processed[sample_idx]
@@ -69,7 +72,7 @@ def main():
     plt.title("Local Feature Contribution (Sample Loan)")
     plt.show()
 
-    print("🎉 STEP 7 COMPLETED SUCCESSFULLY")
+    logger.info("STEP 7 COMPLETED SUCCESSFULLY")
 
 
 if __name__ == "__main__":
