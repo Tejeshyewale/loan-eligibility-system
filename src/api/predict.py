@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from src.api.auth import get_current_user
 
@@ -7,11 +7,11 @@ router = APIRouter(tags=["Prediction"])
 
 
 class LoanRequest(BaseModel):
-    income: float
-    loan_amount: float
-    cibil_score: int
-    bank_assets: float
-    luxury_assets: float
+    income: float = Field(ge=0)
+    loan_amount: float = Field(ge=0)
+    cibil_score: int = Field(ge=300, le=900)
+    bank_assets: float = Field(ge=0)
+    luxury_assets: float = Field(ge=0)
 
 
 @router.post("/predict")
