@@ -67,7 +67,7 @@ def _human_readable_name(encoded_name: str) -> str:
 
 
 def explain_prediction(raw_input: dict) -> dict:
-    """Transform raw input, predict with XGBoost, compute SHAP values.
+    """Transform raw input, predict with the trained tree-based model, compute SHAP values.
 
     Returns dict with prediction, probability and ranked (feature, shap, direction).
     """
