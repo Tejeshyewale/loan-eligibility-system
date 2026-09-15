@@ -1,4 +1,13 @@
 """Shared fixtures: isolated in-memory test DB + TestClient (never touches loan.db)."""
+import os
+
+# Must be set before importing the app: settings fail fast without a secret,
+# and test limits are generous so the suite never 429s itself.
+os.environ.setdefault("JWT_SECRET_KEY", "test-only-secret-not-for-production")
+os.environ.setdefault("RATE_LIMIT_LOGIN", "1000/minute")
+os.environ.setdefault("RATE_LIMIT_PREDICT", "1000/minute")
+os.environ.setdefault("RATE_LIMIT_EXPLAIN", "1000/minute")
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine

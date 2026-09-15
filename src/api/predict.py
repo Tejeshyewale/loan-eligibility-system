@@ -1,7 +1,9 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
 
 from src.api.auth import get_current_user
+from src.api.rate_limit import limiter
+from src.core.settings import RATE_LIMIT_PREDICT
 
 router = APIRouter(tags=["Prediction"])
 
@@ -15,7 +17,8 @@ class LoanRequest(BaseModel):
 
 
 @router.post("/predict")
-def predict(data: LoanRequest, user: dict = Depends(get_current_user)):
+@limiter.limit(RATE_LIMIT_PREDICT)
+def predict(request: Request, data: LoanRequest, user: dict = Depends(get_current_user)):
     score = 0
 
     if data.income >= 500000:
