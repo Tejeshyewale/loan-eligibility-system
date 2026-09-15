@@ -1,11 +1,13 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
 from typing import Union
 
 from src.api.auth import get_current_user
+from src.api.rate_limit import limiter
 from src.core.explainability_engine import explain_prediction
 from src.core.reasoning_generator import generate_reasons
 from src.core.suggestion_engine import generate_suggestions
+from src.core.settings import RATE_LIMIT_EXPLAIN
 
 router = APIRouter(tags=["Explainability"])
 
@@ -25,7 +27,8 @@ class ExplainRequest(BaseModel):
 
 
 @router.post("/predict-explain")
-def predict_explain(data: ExplainRequest, user: dict = Depends(get_current_user)):
+@limiter.limit(RATE_LIMIT_EXPLAIN)
+def predict_explain(request: Request, data: ExplainRequest, user: dict = Depends(get_current_user)):
     raw = data.model_dump()
     result = explain_prediction(raw)
     top_reasons = generate_reasons(result["ranked"], result["prediction"])

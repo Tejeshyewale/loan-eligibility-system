@@ -1,9 +1,11 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from src.database.db import get_db
 from src.database.models import User
 from src.api.auth import hash_password, verify_password, create_token
+from src.api.rate_limit import limiter
+from src.core.settings import RATE_LIMIT_LOGIN
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
@@ -34,7 +36,8 @@ def signup(data: dict, db: Session = Depends(get_db)):
 
 
 @router.post("/login")
-def login(data: dict, db: Session = Depends(get_db)):
+@limiter.limit(RATE_LIMIT_LOGIN)
+def login(request: Request, data: dict, db: Session = Depends(get_db)):
     username = data.get("username")
     password = data.get("password")
 
