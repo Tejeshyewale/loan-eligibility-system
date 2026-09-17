@@ -7,7 +7,12 @@ python-jose
 streamlit
 requests 
 matplotlib 
-shap
+shap==0.52.0
+# Pinned: numba>=0.66 native DLL (_helperlib.pyd) is blocked by Windows
+# Application Control on this host; 0.61.2 loads and works with shap 0.52.
+numba==0.61.2
+llvmlite==0.44.0
+numpy==2.2.6
 xgboost==3.2.0
 imbalanced-learn
 pyyaml
