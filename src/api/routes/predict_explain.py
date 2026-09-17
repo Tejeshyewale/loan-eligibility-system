@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from typing import Union
 
@@ -30,7 +30,11 @@ class ExplainRequest(BaseModel):
 @limiter.limit(RATE_LIMIT_EXPLAIN)
 def predict_explain(request: Request, data: ExplainRequest, user: dict = Depends(get_current_user)):
     raw = data.model_dump()
-    result = explain_prediction(raw)
+    try:
+        result = explain_prediction(raw)
+    except RuntimeError as exc:
+        # SHAP/numba unavailable on this host (e.g. blocked native DLL).
+        raise HTTPException(status_code=503, detail=str(exc))
     top_reasons = generate_reasons(result["ranked"], result["prediction"])
     suggestions = generate_suggestions(
         result["ranked"], raw,

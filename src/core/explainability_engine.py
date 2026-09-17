@@ -4,7 +4,6 @@ import pickle
 from functools import lru_cache
 
 import pandas as pd
-import shap
 
 from src.features.feature_engineering import create_features
 
@@ -22,6 +21,19 @@ RAW_FIELDS = [
 
 @lru_cache(maxsize=1)
 def _load_artifacts():
+    # NOTE: `shap` (via numba) ships native DLLs that can be blocked by
+    # Windows Application Control policies on some hosts. Import it lazily so
+    # a blocked/broken shap install breaks only /predict-explain at request
+    # time — never the whole API at startup.
+    try:
+        import shap
+    except ImportError as exc:
+        raise RuntimeError(
+            "SHAP explainability is unavailable on this host: the 'shap'/'numba' "
+            f"native libraries failed to import ({exc}). Auth, /predict and /docs "
+            "are unaffected; allowlist numba's DLLs or run /predict-explain "
+            "elsewhere to restore explanations."
+        ) from exc
     with open(MODEL_PATH, "rb") as f:
         model = pickle.load(f)
     with open(PREPROCESSOR_PATH, "rb") as f:
