@@ -131,3 +131,45 @@ def explain_prediction(raw_input: dict) -> dict:
         "probability": proba,
         "ranked": ranked,
     }
+
+
+# Fields the What-If simulator is allowed to sweep (numeric loan terms only).
+SWEEPABLE_FIELDS = ("cibil_score", "loan_amount", "income_annum")
+MAX_SWEEP_VALUES = 25
+
+
+def approval_probabilities(raw_input: dict, field: str, values: list) -> list:
+    """Batch approval probability over a sweep of one numeric field.
+
+    Single transform + single predict_proba call (no SHAP recompute), cached
+    artifacts via _load_artifacts. Used by /predict-explain-curve so the
+    What-If simulator needs one HTTP round-trip instead of N.
+    Returns approval probabilities (floats in [0, 1]) aligned with `values`.
+    """
+    import numpy as np
+
+    if field not in SWEEPABLE_FIELDS:
+        raise ValueError(f"field must be one of {SWEEPABLE_FIELDS}, got {field!r}")
+    values = [float(v) for v in values]
+    if not values:
+        raise ValueError("values must be non-empty")
+    if len(values) > MAX_SWEEP_VALUES:
+        raise ValueError(f"at most {MAX_SWEEP_VALUES} values per request")
+
+    model, preprocessor, _explainer = _load_artifacts()
+
+    base = _normalize_categoricals(raw_input)
+    missing = [k for k in RAW_FIELDS if k not in base]
+    if missing:
+        raise ValueError(f"base payload missing fields: {missing}")
+    rows = []
+    for v in values:
+        row = dict(base)
+        row[field] = v
+        rows.append({k: row[k] for k in RAW_FIELDS})
+    df = pd.DataFrame(rows)
+    df = create_features(df)
+
+    X_processed = preprocessor.transform(df)
+    proba_rejected = np.asarray(model.predict_proba(X_processed))[:, 1]
+    return (1.0 - proba_rejected).tolist()
