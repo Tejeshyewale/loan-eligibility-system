@@ -74,6 +74,9 @@ ICON_PATHS = {
     "wallet": '<path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/>'
               '<path d="M3 5v14a2 2 0 0 0 2 2h16V7"/>'
               '<circle cx="16.5" cy="14.5" r=".5"/>',
+    "refresh-cw": '<polyline points="23 4 23 10 17 10"/>'
+                  '<polyline points="1 20 1 14 7 14"/>'
+                  '<path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>',
 }
 
 
@@ -235,6 +238,200 @@ def build_shap_chart(reasons_detail):
     ax.set_axisbelow(True)
     fig.tight_layout()
     return fig
+
+
+def _pct_delta(prob, orig_prob):
+    """Delta math for the What-If display.
+
+    Rounds BOTH probabilities to display precision (integer percent) FIRST,
+    then diffs the rounded values — so e.g. 45.5% vs 46.0% (both shown as
+    "46%") yields delta 0, never a stray "-0.5 pts" badge.
+    Returns (cur_pct, orig_pct, delta_pts). Matches f"{x:.0%}" rounding
+    (round-half-to-even) exactly.
+    """
+    cur_pct = int(round(float(prob) * 100))
+    orig_pct = int(round(float(orig_prob) * 100))
+    return cur_pct, orig_pct, cur_pct - orig_pct
+
+
+def _slider_range(base_value, default_max=1000000):
+    """0.5x–2x range around the submitted value (falls back to 0–default)."""
+    try:
+        base_value = float(base_value)
+    except (TypeError, ValueError):
+        base_value = 0.0
+    if base_value <= 0:
+        return 0, int(default_max), 10000, 0
+    lo = int(max(0, round(base_value * 0.5)))
+    hi = int(max(lo + 1, round(base_value * 2)))
+    step = int(max(1000, round((hi - lo) / 100)))
+    return lo, hi, step, int(round(base_value))
+
+
+def build_whatif_chart(points, probs, orig_cibil, orig_prob, cur_cibil, cur_prob):
+    """CIBIL sweep line chart: teal curve, original vs current markers.
+
+    Same minimal theme as the SHAP chart: transparent background, only a
+    light bottom spine, light gridlines, Inter-like sans-serif.
+    """
+    plt.rcParams["font.family"] = "DejaVu Sans"
+    fig, ax = plt.subplots(figsize=(8, 3.2))
+    fig.patch.set_facecolor("none")
+    fig.patch.set_alpha(0.0)
+    ax.set_facecolor("none")
+
+    ax.plot(points, probs, color=BRAND, linewidth=2.2, zorder=3)
+    ax.scatter([orig_cibil], [orig_prob], color=MUTED, s=55, zorder=4,
+               label="Original submission")
+    if cur_prob is not None:
+        cur_color = GREEN_APPROVE if cur_prob >= 0.5 else RED_REJECT
+        ax.scatter([cur_cibil], [cur_prob], color=cur_color, s=80, zorder=5,
+                   edgecolors="#FFFFFF", linewidths=1.2, label="Current sliders")
+        ax.axvline(cur_cibil, color=cur_color, linewidth=1.0, linestyle="--", alpha=0.5)
+
+    for spine in ("top", "right", "left"):
+        ax.spines[spine].set_visible(False)
+    ax.spines["bottom"].set_color("#E5E7EB")
+    ax.spines["bottom"].set_linewidth(1)
+    ax.set_xlim(300, 900)
+    ax.set_ylim(-0.05, 1.05)
+    ax.set_xlabel("CIBIL score", fontsize=10, color=MUTED)
+    ax.set_ylabel("Approval probability", fontsize=10, color=MUTED)
+    ax.set_title("How approval odds move with CIBIL score", fontsize=12, color=INK, pad=12)
+    ax.tick_params(labelsize=9, colors=MUTED, length=0)
+    ax.yaxis.grid(True, color="#F1F5F9", linewidth=0.7, linestyle="-")
+    ax.set_axisbelow(True)
+    ax.legend(frameon=False, fontsize=9, loc="best")
+    fig.tight_layout()
+    return fig
+
+
+def render_whatif():
+    """Reactive What-If simulator. Reads the stored base submission, lets the
+    user sweep CIBIL / loan amount / income with sliders, re-calls
+    /predict-explain live (cached per unique slider position), and draws the
+    CIBIL sweep curve (one batched /predict-explain-curve call per base
+    submission, cached in session state). Purely additive: never touches the
+    original result rendering above it.
+    """
+    base = st.session_state["whatif_base"]
+    orig = st.session_state["whatif_orig"]
+    wid = st.session_state.get("whatif_id", 0)
+    headers = {"Authorization": f"Bearer {st.session_state['token']}"}
+
+    with st.container(border=True):
+        st.markdown(
+            f"<div class='card-title-row'>{icon('refresh-cw', size=19, color=TEAL)}"
+            f"<span class='h3-card'>What if?</span></div>"
+            f"<div class='caption-text'>Drag a slider — the prediction below "
+            f"updates live. Other fields stay at your submitted values.</div>",
+            unsafe_allow_html=True,
+        )
+
+        cibil = st.slider("CIBIL Score", 300, 900, int(base["cibil_score"]),
+                          key=f"whatif_cibil_{wid}")
+        loan_lo, loan_hi, loan_step, loan_val = _slider_range(base["loan_amount"])
+        loan = st.slider("Loan Amount (Rs.)", loan_lo, loan_hi, loan_val,
+                         step=loan_step, format="Rs. %d", key=f"whatif_loan_{wid}")
+        inc_lo, inc_hi, inc_step, inc_val = _slider_range(base["income_annum"])
+        income = st.slider("Annual Income (Rs.)", inc_lo, inc_hi, inc_val,
+                           step=inc_step, format="Rs. %d", key=f"whatif_income_{wid}")
+
+        # Live re-prediction: one /predict-explain call per unique slider
+        # position (Streamlit reruns on drag; the cache skips repeat calls
+        # for identical values on unrelated reruns).
+        pos_key = (wid, cibil, loan, income)
+        live = st.session_state.get("whatif_live")
+        if not live or live.get("key") != pos_key:
+            tweaked = dict(base)
+            tweaked.update({"cibil_score": cibil, "loan_amount": loan, "income_annum": income})
+            try:
+                with st.spinner("Updating prediction..."):
+                    res = requests.post(
+                        f"{API_URL}/predict-explain",
+                        json=tweaked,
+                        headers=headers,
+                        timeout=REQUEST_TIMEOUT,
+                    )
+                if res.status_code == 200:
+                    live = {"key": pos_key, "ok": True, "data": res.json()}
+                else:
+                    live = {"key": pos_key, "ok": False, "error": api_error_message(res)}
+            except (ConnectionError, Timeout) as exc:
+                live = {"key": pos_key, "ok": False, "error": api_error_message(exc=exc)}
+            st.session_state["whatif_live"] = live
+
+        if live["ok"]:
+            d = live["data"]
+            verdict = d["prediction"]
+            prob = float(d["probability"])
+            cur_pct, orig_pct, delta_pts = _pct_delta(prob, orig["probability"])
+            if verdict == "Approved":
+                st.success(f"Tweaked inputs: Loan Approved — confidence {cur_pct}%")
+            else:
+                st.error(f"Tweaked inputs: Loan Rejected — approval chance {cur_pct}%")
+            st.metric("Live approval probability", f"{cur_pct}%",
+                      delta=(f"{delta_pts:+d} pts vs original" if delta_pts != 0 else None))
+
+            same_cibil = (cibil == int(base["cibil_score"]))
+            if same_cibil and loan == loan_val and income == inc_val:
+                st.markdown(
+                    "<span class='body-text'>Sliders match your original submission — "
+                    "drag one to explore.</span>",
+                    unsafe_allow_html=True,
+                )
+            elif delta_pts == 0:
+                st.markdown(
+                    f"<span class='body-text'>If your CIBIL score were <b>{cibil}</b> "
+                    f"(originally {int(base['cibil_score'])}), your approval "
+                    f"probability would be <b>{cur_pct}%</b> — "
+                    f"no change from your original {orig_pct}%.</span>",
+                    unsafe_allow_html=True,
+                )
+            else:
+                st.markdown(
+                    f"<span class='body-text'>If your CIBIL score were <b>{cibil}</b> "
+                    f"(originally {int(base['cibil_score'])}), your approval "
+                    f"probability would be <b>{cur_pct}%</b> — "
+                    f"{delta_pts:+d} points vs your original {orig_pct}%.</span>",
+                    unsafe_allow_html=True,
+                )
+            cur_prob = prob
+        else:
+            st.error(live["error"])
+            cur_prob = None
+
+        # CIBIL sweep curve: 10 sample points, ONE batched call per base
+        # submission (cached by submit id — slider drags never refetch it).
+        curve = st.session_state.get("whatif_curve")
+        if not curve or curve.get("id") != wid:
+            points = [int(round(300 + i * (600 / 9))) for i in range(10)]
+            try:
+                with st.spinner("Drawing CIBIL curve..."):
+                    res = requests.post(
+                        f"{API_URL}/predict-explain-curve",
+                        json={"base": base, "field": "cibil_score", "values": points},
+                        headers=headers,
+                        timeout=REQUEST_TIMEOUT,
+                    )
+                if res.status_code == 200:
+                    body = res.json()
+                    curve = {"id": wid, "points": body["values"],
+                             "probs": [float(p) for p in body["probabilities"]]}
+                else:
+                    curve = {"id": wid, "error": api_error_message(res)}
+            except (ConnectionError, Timeout) as exc:
+                curve = {"id": wid, "error": api_error_message(exc=exc)}
+            st.session_state["whatif_curve"] = curve
+
+        if "probs" in curve:
+            st.pyplot(build_whatif_chart(
+                curve["points"], curve["probs"],
+                int(base["cibil_score"]), float(orig["probability"]),
+                cibil, cur_prob,
+            ))
+        else:
+            st.caption(f"CIBIL curve unavailable: {curve.get('error', 'unknown error')}")
 
 
 def api_error_message(res=None, exc=None):
@@ -486,6 +683,14 @@ if "token" in st.session_state:
                         st.error(api_error_message(res))
                     else:
                         data = res.json()
+                        # Snapshot for the What-If simulator (reactive section
+                        # rendered below; survives slider reruns via session).
+                        st.session_state["whatif_id"] = st.session_state.get("whatif_id", 0) + 1
+                        st.session_state["whatif_base"] = dict(payload)
+                        st.session_state["whatif_orig"] = {
+                            "probability": float(data["probability"]),
+                            "prediction": data["prediction"],
+                        }
                         with st.container(border=True):
                             if data["prediction"] == "Approved":
                                 st.success(f"Loan Approved — confidence {data['probability']:.0%}")
@@ -518,3 +723,10 @@ if "token" in st.session_state:
                                 st.success(f"**{i}.** {tip}")
                 except (ConnectionError, Timeout) as exc:
                     st.error(api_error_message(exc=exc))
+
+        # What-If simulator: appears below the results after the first
+        # Explain submission and persists across slider-driven reruns.
+        # (Outside the submit-button block on purpose: the button is only
+        # True on the click rerun, while sliders rerun on every drag.)
+        if "whatif_base" in st.session_state:
+            render_whatif()
