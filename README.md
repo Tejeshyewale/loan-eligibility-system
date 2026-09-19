@@ -1,4 +1,4 @@
-# 🏦 Explainable AI Loan Rejection Reasoner (Rural Banking)
+#  Explainable AI Loan Rejection Reasoner (Rural Banking)
 
 An extension of the existing **Loan Eligibility System** that goes beyond a simple Approved/Rejected result — it explains *why* a loan was rejected in plain language and gives actionable, personalized suggestions to improve future eligibility.
 
