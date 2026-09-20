@@ -7,6 +7,7 @@ python-jose
 streamlit
 requests 
 matplotlib 
+fpdf2==2.8.8
 shap==0.52.0
 # Pinned: numba>=0.66 native DLL (_helperlib.pyd) is blocked by Windows
 # Application Control on this host; 0.61.2 loads and works with shap 0.52.

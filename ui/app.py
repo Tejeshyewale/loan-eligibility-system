@@ -306,6 +306,177 @@ def build_whatif_chart(points, probs, orig_cibil, orig_prob, cur_cibil, cur_prob
     return fig
 
 
+# Pretty labels for the 11 applicant fields in the PDF report table.
+REPORT_FIELD_LABELS = {
+    "no_of_dependents": "Dependents",
+    "education": "Education",
+    "self_employed": "Self Employed",
+    "income_annum": "Annual Income (Rs.)",
+    "loan_amount": "Loan Amount (Rs.)",
+    "loan_term": "Loan Term (years)",
+    "cibil_score": "CIBIL Score",
+    "residential_assets_value": "Residential Assets (Rs.)",
+    "commercial_assets_value": "Commercial Assets (Rs.)",
+    "luxury_assets_value": "Luxury Assets (Rs.)",
+    "bank_asset_value": "Bank Assets (Rs.)",
+}
+
+REPORT_FIELDS_ORDER = [
+    "no_of_dependents", "education", "self_employed", "income_annum",
+    "loan_amount", "loan_term", "cibil_score", "residential_assets_value",
+    "commercial_assets_value", "luxury_assets_value", "bank_asset_value",
+]
+
+
+def _pdf_text(value):
+    """Sanitize text for fpdf2 core fonts (latin-1 only): no emoji/dashes."""
+    s = str(value)
+    return (s.replace("\u2014", "-").replace("\u2013", "-")
+             .replace("\u2022", "-").replace("\u00b7", "-")
+             .replace("\u20b9", "Rs.").replace("\u2713", "v")
+             .encode("latin-1", "replace").decode("latin-1"))
+
+
+def build_report_pdf(payload, data):
+    """Generate the Loan Eligibility Report PDF in memory (returns bytes).
+
+    Teal (#0F766E) accents, Helvetica core font, verdict box, applicant
+    table, embedded SHAP chart PNG, reasons, suggestions, disclaimer footer.
+    Pure function of (submitted payload, /predict-explain response).
+    """
+    import io
+    from datetime import datetime
+    from fpdf import FPDF
+
+    TEAL = (15, 118, 110)
+    INK = (31, 41, 55)
+    GREY = (107, 114, 128)
+    approved = data["prediction"] == "Approved"
+    confidence = float(data["probability"])
+    stamp = datetime.now().strftime("%Y-%m-%d %H:%M")
+
+    class Report(FPDF):
+        def header(self):
+            if self.page_no() == 1:
+                return  # title block drawn manually on page 1
+            self.set_x(self.l_margin)
+            self.set_font("Helvetica", "B", 10)
+            self.set_text_color(*TEAL)
+            self.cell(0, 8, _pdf_text("Loan Eligibility Report"), align="L")
+            self.ln(10)
+
+        def footer(self):
+            self.set_y(-18)
+            self.set_x(self.l_margin)
+            self.set_font("Helvetica", "", 8)
+            self.set_text_color(*GREY)
+            self.multi_cell(0, 4, _pdf_text(
+                "Disclaimer: This is an automated assessment tool for informational "
+                "purposes. Final loan decisions are made by the lending institution."
+            ))
+            self.set_x(self.l_margin)
+            self.cell(0, 4, _pdf_text(f"Page {self.page_no()}  |  Generated {stamp}"),
+                      align="R")
+
+    pdf = Report()
+    pdf.set_auto_page_break(True, margin=24)
+    pdf.set_margins(18, 16, 18)
+    pdf.add_page()
+
+    # Title block
+    pdf.set_font("Helvetica", "B", 22)
+    pdf.set_text_color(*TEAL)
+    pdf.cell(0, 12, "Loan Eligibility Report")
+    pdf.ln(8)
+    pdf.set_font("Helvetica", "", 10)
+    pdf.set_text_color(*GREY)
+    pdf.cell(0, 6, _pdf_text(f"Loan Eligibility System  |  Generated {stamp}"))
+    pdf.ln(8)
+    pdf.set_draw_color(*TEAL)
+    pdf.set_line_width(0.8)
+    pdf.line(18, pdf.get_y(), 192, pdf.get_y())
+    pdf.ln(6)
+
+    def section(title):
+        pdf.set_font("Helvetica", "B", 13)
+        pdf.set_text_color(*TEAL)
+        pdf.cell(0, 8, _pdf_text(title))
+        pdf.ln(9)
+
+    # Applicant summary table
+    section("Applicant Summary")
+    pdf.set_font("Helvetica", "", 10)
+    col_w = [70, 104]
+    pdf.set_fill_color(244, 246, 248)
+    pdf.set_text_color(*INK)
+    for i, key in enumerate(REPORT_FIELDS_ORDER):
+        label = REPORT_FIELD_LABELS[key]
+        value = payload.get(key, "-")
+        fill = (i % 2 == 0)
+        pdf.set_font("Helvetica", "B", 10)
+        pdf.cell(col_w[0], 7, _pdf_text(label), border=0, fill=fill)
+        pdf.set_font("Helvetica", "", 10)
+        pdf.cell(col_w[1], 7, _pdf_text(value), border=0, fill=fill)
+        pdf.ln(7)
+    pdf.ln(4)
+
+    # Verdict box
+    section("Decision")
+    box_fill = (209, 250, 229) if approved else (254, 226, 226)
+    box_text = (5, 150, 105) if approved else (220, 38, 38)
+    verdict_word = "APPROVED" if approved else "REJECTED"
+    pdf.set_fill_color(*box_fill)
+    pdf.set_text_color(*box_text)
+    pdf.set_font("Helvetica", "B", 15)
+    y0 = pdf.get_y()
+    pdf.set_x(18)
+    pdf.multi_cell(174, 10,
+                   _pdf_text(f"{verdict_word}  -  Confidence {confidence:.0%}"),
+                   align="C", fill=True)
+    pdf.set_y(pdf.get_y() + 5)
+
+    # SHAP chart (white background for print; on-screen chart untouched)
+    section("Why This Decision")
+    fig = build_shap_chart(data["reasons_detail"])
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", dpi=150, facecolor="white", bbox_inches="tight")
+    import matplotlib.pyplot as plt
+    plt.close(fig)
+    buf.seek(0)
+    if pdf.get_y() > 195:
+        pdf.add_page()
+    pdf.image(buf, x=20, w=170)
+    pdf.ln(4)
+
+    def body(text, style="", size=10):
+        # NOTE: fpdf2's multi_cell() leaves the cursor at the end of the last
+        # line (new_x=RIGHT by default), so consecutive multi_cell(0, ...)
+        # calls would start at the right edge with ~0 width and raise
+        # "Not enough horizontal space". Always re-anchor x first.
+        pdf.set_x(pdf.l_margin)
+        pdf.set_font("Helvetica", style, size)
+        pdf.set_text_color(*INK)
+        pdf.multi_cell(0, 6, _pdf_text(text))
+
+    # Plain-language reasons
+    section("Key Reasons")
+    for reason in data.get("top_reasons", []):
+        body(f"-  {reason}")
+    pdf.ln(2)
+
+    # Suggestions
+    section("How To Improve")
+    suggestions = data.get("suggestions", []) or []
+    if suggestions:
+        for j, tip in enumerate(suggestions, 1):
+            body(f"{j}.  {tip}")
+    else:
+        body("No changes needed - your application already meets the bar.", style="I")
+
+    out = pdf.output()
+    return bytes(out)
+
+
 def render_whatif():
     """Reactive What-If simulator. Reads the stored base submission, lets the
     user sweep CIBIL / loan amount / income with sliders, re-calls
@@ -691,6 +862,12 @@ if "token" in st.session_state:
                             "probability": float(data["probability"]),
                             "prediction": data["prediction"],
                         }
+                        # Full snapshot for the Download Report card below.
+                        st.session_state["report"] = {
+                            "id": st.session_state["whatif_id"],
+                            "payload": dict(payload),
+                            "data": data,
+                        }
                         with st.container(border=True):
                             if data["prediction"] == "Approved":
                                 st.success(f"Loan Approved — confidence {data['probability']:.0%}")
@@ -723,6 +900,33 @@ if "token" in st.session_state:
                                 st.success(f"**{i}.** {tip}")
                 except (ConnectionError, Timeout) as exc:
                     st.error(api_error_message(exc=exc))
+
+        # Download Report card: persists across reruns via session state
+        # (the submit button above is only True on the click rerun).
+        if "report" in st.session_state:
+            rep = st.session_state["report"]
+            with st.container(border=True):
+                card_heading(
+                    "file-text", "Download Report",
+                    "Your result as a clean PDF — verdict, inputs, chart, reasons.",
+                )
+                pdf_key = f"report_pdf_{rep['id']}"
+                if pdf_key not in st.session_state:
+                    try:
+                        with st.spinner("Preparing report..."):
+                            st.session_state[pdf_key] = build_report_pdf(
+                                rep["payload"], rep["data"])
+                    except ImportError:
+                        st.error("PDF engine (fpdf2) is not installed on the app host.")
+                        st.session_state[pdf_key] = None
+                if st.session_state[pdf_key]:
+                    st.download_button(
+                        "Download PDF report",
+                        data=st.session_state[pdf_key],
+                        file_name=f"loan_eligibility_report_{rep['data']['prediction'].lower()}.pdf",
+                        mime="application/pdf",
+                        key=f"download_report_{rep['id']}",
+                    )
 
         # What-If simulator: appears below the results after the first
         # Explain submission and persists across slider-driven reruns.
