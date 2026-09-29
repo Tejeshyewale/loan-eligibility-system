@@ -1,7 +1,9 @@
 fastapi
 uvicorn
 sqlalchemy
-pandas
+# Pinned: fresh pandas>=3.0.5 native DLLs are blocked by Windows Application
+# Control on this host; 3.0.3 loads (same reason as the numba pin below).
+pandas==3.0.3
 scikit-learn==1.8.0
 python-jose
 streamlit
