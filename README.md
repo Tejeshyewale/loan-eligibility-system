@@ -48,7 +48,8 @@ New:  suggestion_engine.py       → threshold-based improvement advice
 New:  UI section                 → waterfall chart + explanation + suggestions
 ```
 
-**New API endpoint:** `/predict-explain`
+**New API endpoint:** `/pr
+edict-explain`
 Returns: prediction + top contributing features + plain-language reason + suggestions.
 
 ---
@@ -112,7 +113,8 @@ An explainable AI layer on top of a loan eligibility model that:
 - [ ] Build rule-based NLG templates for common rejection reasons
 - [ ] Add regional language support (Hindi + others) for explanations
 - [ ] Add SHAP waterfall chart to Streamlit UI
-- [ ] (Stretch) Upgrade template-based NLG to LLM-based dynamic explanation generation
+- [ ] (Stretch) Upgrade template-based NLG to LLM-based dynamic explanation
+ generation
 - [ ] (Stretch) Add feedback loop: track if suggested improvements actually helped reapplicants
 
 ---
@@ -120,5 +122,8 @@ An explainable AI layer on top of a loan eligibility model that:
 ### 👨‍💻 Author
 
 Tejesh Yewale
-# Right Now The Link Is Not Working 
-#Deployed base system: https://loan-eligibility-ui.onrender.com/
+
+### 🔗 Deployed Base System
+
+- Demo URL: https://loan-eligibility-ui.onrender.com/ *(currently down — will redeploy soon)*
+
