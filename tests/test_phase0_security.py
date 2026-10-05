@@ -102,6 +102,13 @@ def test_logging_never_leaks_secrets(client, auth_headers, caplog):
     assert re.search(r"password", text, re.IGNORECASE) is None
 
 
+def test_default_login_limit_is_5_per_minute():
+    """Production default for /login must stay 5/minute (no inspection of env)."""
+    from src.core.settings import Settings
+
+    assert Settings.model_fields["RATE_LIMIT_LOGIN"].default == "5/minute"
+
+
 def test_login_rate_limit_triggers(tmp_path):
     """With a 2/minute login limit, the 3rd rapid login must 429."""
     probe = tmp_path / "rate_probe.py"

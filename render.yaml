@@ -4,5 +4,12 @@ services:
     runtime: python
     plan: free
     buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn src.api.main:app --host 0.0.0.0 --port 10000
-
+    # --proxy-headers: trust Render's reverse proxy (X-Forwarded-For/Proto)
+    # so rate limiting sees the real client IP and URLs use https.
+    startCommand: uvicorn src.api.main:app --host 0.0.0.0 --port 10000 --proxy-headers
+    envVars:
+      # sync: false -> set manually in the Render dashboard (never committed).
+      - key: JWT_SECRET_KEY
+        sync: false
+      - key: DATABASE_URL
+        sync: false
