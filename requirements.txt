@@ -20,6 +20,7 @@ xgboost==3.2.0
 imbalanced-learn
 pyyaml
 pydantic
+pydantic-settings
 pytest
 httpx
 bcrypt
