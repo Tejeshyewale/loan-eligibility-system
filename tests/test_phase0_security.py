@@ -109,8 +109,41 @@ def test_default_login_limit_is_5_per_minute():
     assert Settings.model_fields["RATE_LIMIT_LOGIN"].default == "5/minute"
 
 
+def test_default_trusted_proxy_hops_is_1():
+    """One trusted proxy hop (Render) unless the deploy overrides it."""
+    from src.core.settings import Settings
+
+    assert Settings.model_fields["TRUSTED_PROXY_HOPS"].default == 1
+
+
+def _xff_request(xff=None, host="5.6.7.8"):
+    from starlette.requests import Request
+
+    headers = []
+    if xff is not None:
+        headers.append((b"x-forwarded-for", xff.encode()))
+    return Request({"type": "http", "headers": headers, "client": (host, 5000)})
+
+
+def test_get_client_ip_trusts_rightmost():
+    from src.api.rate_limit import get_client_ip
+
+    assert get_client_ip(_xff_request("9.9.9.9, 10.0.0.1")) == "10.0.0.1"
+
+
+def test_get_client_ip_falls_back_to_peer(monkeypatch):
+    import src.api.rate_limit as rl
+
+    assert rl.get_client_ip(_xff_request()) == "5.6.7.8"  # no header
+    monkeypatch.setattr(rl, "TRUSTED_PROXY_HOPS", 2)
+    assert rl.get_client_ip(_xff_request("9.9.9.9")) == "5.6.7.8"  # chain too short
+
+
 def test_login_rate_limit_triggers(tmp_path):
-    """With a 2/minute login limit, the 3rd rapid login must 429."""
+    """With a 2/minute login limit: (a) a client replaying a spoofed
+    leftmost XFF entry on every request still shares ONE budget keyed on
+    the trusted rightmost IP and gets 429 on the 3rd attempt; (b) a
+    genuinely different rightmost IP gets a fresh budget."""
     probe = tmp_path / "rate_probe.py"
     probe.write_text(textwrap.dedent("""\
         from fastapi.testclient import TestClient
@@ -139,12 +172,20 @@ def test_login_rate_limit_triggers(tmp_path):
         app.dependency_overrides[get_db] = _override
         with TestClient(app) as client:
             client.post("/auth/signup", json={"username": "rl_user", "password": "secret123"})
-            codes = []
+            body = {"username": "rl_user", "password": "secret123"}
+            # (a) spoofed leftmost entry, stable trusted rightmost entry.
+            codes_a = []
             for _ in range(3):
-                r = client.post("/auth/login", json={"username": "rl_user", "password": "secret123"})
-                codes.append(r.status_code)
-            print("CODES:", codes)
-            assert codes[0] == 200 and codes[1] == 200 and codes[2] == 429, codes
+                r = client.post("/auth/login", json=body,
+                                headers={"X-Forwarded-For": "9.9.9.9, 10.0.0.1"})
+                codes_a.append(r.status_code)
+            print("CODES_A:", codes_a)
+            assert codes_a == [200, 200, 429], codes_a
+            # (b) different trusted rightmost IP -> separate budget.
+            r = client.post("/auth/login", json=body,
+                            headers={"X-Forwarded-For": "9.9.9.9, 10.0.0.2"})
+            print("CODES_B:", r.status_code)
+            assert r.status_code == 200, r.status_code
     """))
     proc = subprocess.run(
         [sys.executable, str(probe)],

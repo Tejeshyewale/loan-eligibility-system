@@ -83,6 +83,7 @@ start without `JWT_SECRET_KEY`.
 | `RATE_LIMIT_LOGIN` | no | `5/minute` | slowapi limit for `/auth/login` |
 | `RATE_LIMIT_PREDICT` | no | `10/minute` | slowapi limit for `/predict` |
 | `RATE_LIMIT_EXPLAIN` | no | `10/minute` | slowapi limit for `/predict-explain*` |
+| `TRUSTED_PROXY_HOPS` | no | `1` | Proxies appending to X-Forwarded-For that the limiter trusts, counted from the right (Render = 1) |
 | `ADMIN_EMAIL` / `ADMIN_PASSWORD` | no | empty | Bootstrap admin via `python -m src.database.create_admin` |
 
 ### Deploying on Render (`render.yaml`)
@@ -92,8 +93,11 @@ start without `JWT_SECRET_KEY`.
 - Set `JWT_SECRET_KEY` (and `DATABASE_URL` if using Postgres) in the
   Render dashboard — both are declared with `sync: false` so they are
   never committed.
-- `startCommand` passes `--proxy-headers` so rate limiting sees the real
-  client IP behind Render's proxy.
+- `startCommand` passes `--proxy-headers` so the app agrees with Render's
+  proxy on scheme/host. Rate limiting keys on the client IP taken from the
+  Nth `X-Forwarded-For` entry **from the right** (N = `TRUSTED_PROXY_HOPS`,
+  default 1): proxies append the address they see, so leftmost entries are
+  client-controlled and must never be trusted.
 
 ---
 
