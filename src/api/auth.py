@@ -1,4 +1,5 @@
 import bcrypt
+import hashlib
 from datetime import datetime, timedelta
 from jose import jwt, JWTError
 from fastapi import Depends, HTTPException, status
@@ -29,6 +30,22 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
             plain_password.encode("utf-8"), hashed_password.encode("utf-8"))
     except (ValueError, TypeError):
         return False
+
+
+def is_legacy_sha256_hash(stored: str) -> bool:
+    """Detect pre-bcrypt unsalted SHA-256 hex digests (64 hex chars)."""
+    return (
+        isinstance(stored, str)
+        and len(stored) == 64
+        and all(c in "0123456789abcdef" for c in stored.lower())
+    )
+
+
+def verify_legacy_sha256(plain_password: str, stored: str) -> bool:
+    """Check a password against a legacy unsalted SHA-256 hex digest."""
+    if not is_legacy_sha256_hash(stored):
+        return False
+    return hashlib.sha256(plain_password.encode("utf-8")).hexdigest() == stored.lower()
 
 
 def create_token(username: str, role: str):

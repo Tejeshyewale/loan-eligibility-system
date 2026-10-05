@@ -2,6 +2,13 @@ from fastapi import APIRouter, HTTPException
 from src.database.db import SessionLocal
 from src.database.models import LoanApplication
 
+# TODO(Phase 2/5): this router is intentionally NOT wired into main.py yet.
+# It imports LoanApplication, which does not exist in src/database/models.py
+# (only User exists), so importing this module raises ImportError today.
+# To enable: add the LoanApplication model, require role="admin" on every
+# route, use the get_db dependency instead of raw SessionLocal, and then
+# include_router() it in src/api/main.py.
+
 router = APIRouter(prefix="/admin", tags=["Admin"])
 
 
