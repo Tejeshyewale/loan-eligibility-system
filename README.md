@@ -68,6 +68,35 @@ streamlit run ui/app.py
 
 ---
 
+## 🔐 Configuration (environment variables)
+
+Copy `.env.example` to `.env` and fill in real values. The API refuses to
+start without `JWT_SECRET_KEY`.
+
+| Variable | Required | Default | Purpose |
+|---|---|---|---|
+| `JWT_SECRET_KEY` | **yes** | — | JWT signing secret (generate with `python -c "import secrets; print(secrets.token_hex(32))"`) |
+| `JWT_ALGORITHM` | no | `HS256` | JWT algorithm |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` | no | `60` | Token lifetime |
+| `DATABASE_URL` | no | `sqlite:///./loan.db` | SQLAlchemy URL (e.g. `postgresql://user:pass@host/db`) |
+| `CORS_ALLOWED_ORIGINS` | no | `http://localhost:8501` | Comma-separated frontend origins |
+| `RATE_LIMIT_LOGIN` | no | `5/minute` | slowapi limit for `/auth/login` |
+| `RATE_LIMIT_PREDICT` | no | `10/minute` | slowapi limit for `/predict` |
+| `RATE_LIMIT_EXPLAIN` | no | `10/minute` | slowapi limit for `/predict-explain*` |
+| `ADMIN_EMAIL` / `ADMIN_PASSWORD` | no | empty | Bootstrap admin via `python -m src.database.create_admin` |
+
+### Deploying on Render (`render.yaml`)
+
+- Models (`models/*.pkl`) are loaded **from the repo** — no build step needed.
+- Tables are created automatically on startup (idempotent `create_all`).
+- Set `JWT_SECRET_KEY` (and `DATABASE_URL` if using Postgres) in the
+  Render dashboard — both are declared with `sync: false` so they are
+  never committed.
+- `startCommand` passes `--proxy-headers` so rate limiting sees the real
+  client IP behind Render's proxy.
+
+---
+
 ## 📊 Sample Output
 
 ```
