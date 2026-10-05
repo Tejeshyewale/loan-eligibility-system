@@ -3,6 +3,7 @@
 Fails fast: JWT_SECRET_KEY has no default, so importing this module without
 a real secret raises immediately instead of booting an insecure app.
 """
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -26,11 +27,16 @@ class Settings(BaseSettings):
     RATE_LIMIT_EXPLAIN: str = "10/minute"
     # Proxies between the client and us that APPEND to X-Forwarded-For
     # (Render = 1). The limiter trusts the Nth entry from the RIGHT.
-    TRUSTED_PROXY_HOPS: int = 1
+    # 0 = direct-serve mode: ignore X-Forwarded-For entirely, always use
+    # the connection peer. Negative values are rejected at startup.
+    TRUSTED_PROXY_HOPS: int = Field(default=1, ge=0)
 
     # --- Bootstrap admin (optional; used by src/database/create_admin.py) ---
     ADMIN_EMAIL: str = ""
     ADMIN_PASSWORD: str = ""
+
+    # --- Temporary diagnostics (off by default; see src/api/debug.py) ---
+    DEBUG_CLIENT_IP: bool = False
 
 
 settings = Settings()
@@ -50,5 +56,6 @@ RATE_LIMIT_LOGIN = settings.RATE_LIMIT_LOGIN
 RATE_LIMIT_PREDICT = settings.RATE_LIMIT_PREDICT
 RATE_LIMIT_EXPLAIN = settings.RATE_LIMIT_EXPLAIN
 TRUSTED_PROXY_HOPS = settings.TRUSTED_PROXY_HOPS
+DEBUG_CLIENT_IP = settings.DEBUG_CLIENT_IP
 ADMIN_EMAIL = settings.ADMIN_EMAIL
 ADMIN_PASSWORD = settings.ADMIN_PASSWORD

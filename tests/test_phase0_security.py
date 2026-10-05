@@ -7,6 +7,8 @@ import sys
 import textwrap
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parent.parent
 
 
@@ -133,9 +135,10 @@ def test_get_client_ip_trusts_rightmost():
 
 def test_get_client_ip_falls_back_to_peer(monkeypatch):
     import src.api.rate_limit as rl
+    from src.core import settings as settings_module
 
     assert rl.get_client_ip(_xff_request()) == "5.6.7.8"  # no header
-    monkeypatch.setattr(rl, "TRUSTED_PROXY_HOPS", 2)
+    monkeypatch.setattr(settings_module.settings, "TRUSTED_PROXY_HOPS", 2)
     assert rl.get_client_ip(_xff_request("9.9.9.9")) == "5.6.7.8"  # chain too short
 
 
@@ -199,3 +202,88 @@ def test_login_rate_limit_triggers(tmp_path):
         capture_output=True, text=True, timeout=180,
     )
     assert proc.returncode == 0, "STDOUT:\n" + proc.stdout + "\nSTDERR:\n" + proc.stderr[-2000:]
+
+
+def test_negative_proxy_hops_rejected():
+    """TRUSTED_PROXY_HOPS=-1 must fail settings validation, not silently run."""
+    from pydantic import ValidationError
+    from src.core.settings import Settings
+
+    with pytest.raises(ValidationError):
+        Settings(TRUSTED_PROXY_HOPS=-1)
+
+
+def test_hops_zero_ignores_xff_entirely(tmp_path):
+    """Direct-serve mode (hops=0): 6 logins with a *different* spoofed XFF
+    each time still share the peer budget -> 5x200 then 429."""
+    probe = tmp_path / "rate_probe_zero.py"
+    probe.write_text(textwrap.dedent("""\
+        from fastapi.testclient import TestClient
+        from sqlalchemy import create_engine
+        from sqlalchemy.orm import sessionmaker
+        from sqlalchemy.pool import StaticPool
+        from src.api.main import app
+        from src.database.db import get_db
+        from src.database.models import Base
+
+        engine = create_engine(
+            "sqlite:///:memory:",
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+        )
+        Base.metadata.create_all(engine)
+        TestingSession = sessionmaker(bind=engine)
+
+        def _override():
+            session = TestingSession()
+            try:
+                yield session
+            finally:
+                session.close()
+
+        app.dependency_overrides[get_db] = _override
+        with TestClient(app) as client:
+            client.post("/auth/signup", json={"username": "rl0_user", "password": "secret123"})
+            body = {"username": "rl0_user", "password": "secret123"}
+            codes = []
+            for i in range(6):
+                r = client.post("/auth/login", json=body,
+                                headers={"X-Forwarded-For": f"9.9.9.{i}, 10.0.0.1"})
+                codes.append(r.status_code)
+            print("CODES_ZERO:", codes)
+            assert codes == [200, 200, 200, 200, 200, 429], codes
+    """))
+    proc = subprocess.run(
+        [sys.executable, str(probe)],
+        cwd=tmp_path,
+        env=_child_env(
+            JWT_SECRET_KEY="test-only-secret-not-for-production",
+            RATE_LIMIT_LOGIN="5/minute",
+            RATE_LIMIT_PREDICT="1000/minute",
+            RATE_LIMIT_EXPLAIN="1000/minute",
+            TRUSTED_PROXY_HOPS="0",
+        ),
+        capture_output=True, text=True, timeout=180,
+    )
+    assert proc.returncode == 0, "STDOUT:\n" + proc.stdout + "\nSTDERR:\n" + proc.stderr[-2000:]
+
+
+def test_debug_client_ip_disabled_by_default(client):
+    """The diagnostics endpoint must 404 unless explicitly enabled."""
+    res = client.get("/_debug/client-ip")
+    assert res.status_code == 404
+
+
+def test_debug_client_ip_when_enabled(client, monkeypatch):
+    """With the flag on: echoes raw XFF, peer, hops and resolved IP."""
+    from src.core import settings as settings_module
+
+    monkeypatch.setattr(settings_module.settings, "DEBUG_CLIENT_IP", True)
+    res = client.get("/_debug/client-ip",
+                     headers={"X-Forwarded-For": "9.9.9.9, 10.0.0.7"})
+    assert res.status_code == 200
+    body = res.json()
+    assert body["x_forwarded_for"] == "9.9.9.9, 10.0.0.7"
+    assert body["peer"] == "testclient"
+    assert body["trusted_proxy_hops"] == 1
+    assert body["resolved_ip"] == "10.0.0.7"
