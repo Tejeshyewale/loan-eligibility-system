@@ -3,3 +3,8 @@ __pycache__/
 *.py[cod]
 *.bak
 .env
+# SQLite databases (local-only state; Render uses its own disk).
+# NOTE: models/*.pkl and preprocessor.pkl are intentionally TRACKED —
+# render.yaml has no model-build step, the API loads them from the repo.
+*.db
+*.sqlite3
