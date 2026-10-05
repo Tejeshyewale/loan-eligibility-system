@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
+from contextlib import asynccontextmanager
 import time
 
 from src.api.auth_routes import router as auth_router
@@ -10,11 +11,24 @@ from src.api.predict import router as predict_router
 from src.api.routes.predict_explain import router as predict_explain_router
 from src.api.rate_limit import limiter
 from src.core.settings import CORS_ALLOWED_ORIGINS
+from src.database.db import engine
+from src.database.models import Base
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
-app = FastAPI(title="Loan Eligibility API")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Create tables on startup (idempotent): a fresh deploy with no
+    loan.db gets working tables automatically. `engine` is read from module
+    globals so tests can point it at an empty scratch DB."""
+    Base.metadata.create_all(bind=engine)
+    logger.info("Database tables ensured.")
+    yield
+
+
+app = FastAPI(title="Loan Eligibility API", lifespan=lifespan)
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
