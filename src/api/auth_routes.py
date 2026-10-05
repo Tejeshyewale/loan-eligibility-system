@@ -3,7 +3,12 @@ from sqlalchemy.orm import Session
 
 from src.database.db import get_db
 from src.database.models import User
-from src.api.auth import hash_password, verify_password, create_token
+from src.api.auth import (
+    hash_password,
+    verify_legacy_sha256,
+    verify_password,
+    create_token,
+)
 from src.api.rate_limit import limiter
 from src.core.settings import RATE_LIMIT_LOGIN
 
@@ -14,7 +19,9 @@ router = APIRouter(prefix="/auth", tags=["Authentication"])
 def signup(data: dict, db: Session = Depends(get_db)):
     username = data.get("username")
     password = data.get("password")
-    role = data.get("role", "user")
+    # SECURITY: role is always "user" here. Any "role" key in the request
+    # body is ignored — admins are created via create_admin.py only.
+    # (Previously the body role was honored: privilege escalation.)
 
     if not username or not password:
         raise HTTPException(status_code=400, detail="Username & password required")
@@ -25,7 +32,7 @@ def signup(data: dict, db: Session = Depends(get_db)):
     user = User(
         username=username,
         password=hash_password(password),
-        role=role
+        role="user",
     )
 
     db.add(user)
@@ -49,7 +56,15 @@ def login(request: Request, data: dict, db: Session = Depends(get_db)):
     if not user:
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
-    if not verify_password(password, user.password):
+    password_ok = verify_password(password, user.password)
+    if not password_ok and verify_legacy_sha256(password, user.password):
+        # Transparent upgrade: correct legacy SHA-256 password -> rehash
+        # with bcrypt so the weak hash disappears on first successful login.
+        user.password = hash_password(password)
+        db.commit()
+        password_ok = True
+
+    if not password_ok:
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
     token = create_token(user.username, user.role)
