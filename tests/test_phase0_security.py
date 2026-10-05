@@ -1,5 +1,6 @@
 """Phase 0 security tests: role escalation, secret fail-fast, rate limit, rehash."""
 import hashlib
+import logging
 import os
 import subprocess
 import sys
@@ -60,6 +61,45 @@ def test_legacy_sha256_login_rehashes_to_bcrypt(client, db_session):
     assert stored != legacy_hex
     assert stored.startswith("$2b$")
     assert bcrypt.checkpw(b"oldpass123", stored.encode())
+
+
+def test_startup_creates_tables_on_empty_db(tmp_path, monkeypatch):
+    """Lifespan must create all tables when pointed at a fresh empty DB file."""
+    import asyncio
+    from sqlalchemy import create_engine, inspect
+
+    import src.api.main as main_module
+    from src.database.models import Base as models_base
+
+    fresh = tmp_path / "fresh.db"
+    assert not fresh.exists()
+    scratch = create_engine(f"sqlite:///{fresh}")
+    monkeypatch.setattr(main_module, "engine", scratch)
+
+    async def _run():
+        async with main_module.lifespan(main_module.app):
+            pass
+
+    asyncio.run(_run())
+    tables = set(inspect(scratch).get_table_names())
+    expected = set(models_base.metadata.tables.keys())
+    assert expected, "models define no tables"
+    assert expected <= tables
+
+
+def test_logging_never_leaks_secrets(client, auth_headers, caplog):
+    """Middleware/logs must not contain bodies, passwords, or tokens."""
+    import re
+
+    with caplog.at_level(logging.INFO):
+        client.post("/auth/login",
+                    json={"username": "leak_probe_user_xyz", "password": "SuperSecretPW123"})
+        client.get("/", headers=auth_headers)
+    text = caplog.text
+    assert "SuperSecretPW123" not in text
+    assert "Bearer" not in text
+    assert "authorization" not in text.lower()
+    assert re.search(r"password", text, re.IGNORECASE) is None
 
 
 def test_login_rate_limit_triggers(tmp_path):
