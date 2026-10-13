@@ -13,13 +13,12 @@ from src.core.explainability_engine import (
     explain_prediction,
 )
 from src.core.reasoning_generator import generate_reasons
-from src.core.suggestion_engine import generate_suggestions
 from src.core.settings import RATE_LIMIT_EXPLAIN
+from src.core.suggestion_engine import generate_suggestions
 from src.database.db import get_db
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
-from src.core.suggestion_engine import generate_suggestions
 
 router = APIRouter(tags=["Explainability"])
 
