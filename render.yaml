@@ -20,6 +20,24 @@ services:
       # Interpreter the pickles were built/tested under (venv: 3.12.10).
       - key: PYTHON_VERSION
         value: 3.12.10
+      # Browser origins allowed to call the API (UI service + local dev).
+      - key: CORS_ALLOWED_ORIGINS
+        value: https://loan-eligibility-ui.onrender.com,http://localhost:8501
+
+  - type: web
+    name: loan-eligibility-ui
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    # NOTE: installs the full ML requirements even though the UI only needs
+    # streamlit/requests/matplotlib/fpdf2 (see report: split requirements-ui.txt).
+    # $PORT is provided by Render; --server.headless true avoids browser launch.
+    startCommand: streamlit run ui/app.py --server.port $PORT --server.address 0.0.0.0 --server.headless true --browser.gatherUsageStats false
+    envVars:
+      - key: API_URL
+        value: https://loan-eligibility-api.onrender.com
+      - key: PYTHON_VERSION
+        value: 3.12.10
 
 databases:
   - name: loan-db
