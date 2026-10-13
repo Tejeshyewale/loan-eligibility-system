@@ -1,9 +1,11 @@
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session
 
 from src.api.auth import get_current_user
 from src.api.rate_limit import limiter
+from src.api.routes.history import log_application, resolve_user_id
 from src.core.explainability_engine import (
     MAX_SWEEP_VALUES,
     SWEEPABLE_FIELDS,
@@ -11,7 +13,12 @@ from src.core.explainability_engine import (
     explain_prediction,
 )
 from src.core.reasoning_generator import generate_reasons
+from src.core.suggestion_engine import generate_suggestions
 from src.core.settings import RATE_LIMIT_EXPLAIN
+from src.database.db import get_db
+from src.utils.logger import get_logger
+
+logger = get_logger(__name__)
 from src.core.suggestion_engine import generate_suggestions
 
 router = APIRouter(tags=["Explainability"])
@@ -33,7 +40,8 @@ class ExplainRequest(BaseModel):
 
 @router.post("/predict-explain")
 @limiter.limit(RATE_LIMIT_EXPLAIN)
-def predict_explain(request: Request, data: ExplainRequest, user: dict = Depends(get_current_user)):
+def predict_explain(request: Request, data: ExplainRequest, user: dict = Depends(get_current_user),
+                    db: Session = Depends(get_db)):
     raw = data.model_dump()
     try:
         result = explain_prediction(raw)
@@ -49,6 +57,14 @@ def predict_explain(request: Request, data: ExplainRequest, user: dict = Depends
         {"feature": r["feature_name"], "shap_value": r["shap_value"], "direction": r["direction"]}
         for r in result["ranked"][:5]
     ]
+    try:
+        uid = resolve_user_id(db, user)
+        if uid is not None:
+            log_application(db, uid, raw, result["prediction"],
+                            float(result["probability"]), False,
+                            top_reasons, suggestions)
+    except Exception as exc:
+        logger.warning("History logging failed (response unaffected): %s", exc)
     return {
         "prediction": result["prediction"],
         "probability": result["probability"],
