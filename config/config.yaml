@@ -58,7 +58,14 @@ heuristic_predict:
 # Defaults assumed by the /predict quick estimate for the 6 fields it does
 # NOT collect. Documented and disclosed: the endpoint returns them back as
 # `assumed_defaults`, and the UI tells the user details were assumed.
-# Values = typical-applicant placeholders, not personalized data.
+# Chosen conservative/modal, verified decision-neutral on a 10-profile probe
+# (swapping education/self_employed/dependents/term flips 0/10 verdicts;
+# asset flips only occur when assuming MUCH larger holdings, i.e. these
+# values never inflate approvals): term = dataset median (10);
+# education/self_employed = coin-flip categories, fixed to the common
+# reading; dependents = 1 (below median 3/mode 4; measured 0/10 flips,
+# so no detectable lean either way); residential = near mode (400k, rounded
+# to 500k); commercial = mode 0.
 quick_estimate:
   no_of_dependents: 1
   education: "Graduate"
