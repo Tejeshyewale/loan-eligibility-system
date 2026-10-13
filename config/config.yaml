@@ -67,6 +67,14 @@ quick_estimate:
   residential_assets_value: 500000
   commercial_assets_value: 0
 
+# Model governance tripwire (see tests/test_model_honesty.py).
+# allow_separable_data: the demo dataset is synthetically separable
+# (a depth-3 tree scores 1.0 on holdout). True ONLY while demo data is in
+# use; set false once training on real data — then a >0.99 depth-3-tree
+# score fails the suite instead of xfailing.
+model_governance:
+  allow_separable_data: true
+
 # NOTE on src/core/explainability_engine.py: searched, no business/decision
 # thresholds found — only math (1.0 - P(rejected)), SHAP sign handling
 # (v >= 0), and field lists. Nothing to extract.
