@@ -3,6 +3,11 @@
 Gated by DEBUG_CLIENT_IP (default False). When the flag is off the endpoint
 404s as if it never existed. DELETE THIS MODULE once the hop count is
 confirmed in production.
+
+TODO(Render check): after deploying with DEBUG_CLIENT_IP=true and confirming
+TRUSTED_PROXY_HOPS from GET /_debug/client-ip, delete this file, remove its
+include_router line in src/api/main.py, and drop DEBUG_CLIENT_IP from
+src/core/settings.py + .env.example. Do NOT delete before that confirmation.
 """
 from fastapi import APIRouter, HTTPException, Request
 
