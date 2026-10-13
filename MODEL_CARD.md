@@ -33,7 +33,8 @@ dataset is in use).
 - Not trained on real lending outcomes; worthless as a credit model.
 - Cannot handle distribution shift; near-boundary cases are guesses.
 - `/predict` quick estimates assume 6 default fields (disclosed per response).
-
+  Missing details are assumed conservatively; the full 11-field form may
+  give a better result.
 ## Fairness concerns
 The model consumes `education`, `self_employed`, and `no_of_dependents`
 (plus `marital_status` is NOT present — do not add it without a fairness
