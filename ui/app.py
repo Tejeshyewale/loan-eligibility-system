@@ -372,7 +372,8 @@ def build_report_pdf(payload, data):
             self.set_text_color(*GREY)
             self.multi_cell(0, 4, _pdf_text(
                 "Disclaimer: This is an automated assessment tool for informational "
-                "purposes. Final loan decisions are made by the lending institution."
+                "purposes, based on a demonstration model. Final loan decisions "
+                "are made by the lending institution - this is not a bank decision."
             ))
             self.set_x(self.l_margin)
             self.cell(0, 4, _pdf_text(f"Page {self.page_no()}  |  Generated {stamp}"),
@@ -887,6 +888,9 @@ if "token" in st.session_state:
                                 st.success(f"Loan Approved — confidence {data['probability']:.0%}")
                             else:
                                 st.error(f"Loan Rejected — approval chance {data['probability']:.0%}")
+                            st.caption(
+                                "Estimate based on a demonstration model. "
+                                "Not a bank decision.")
 
                             st.markdown(
                                 f"<div class='card-title-row'>{icon('bar-chart', size=19, color=TEAL)}"
