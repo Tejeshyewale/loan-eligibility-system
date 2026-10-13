@@ -6,10 +6,18 @@ services:
     buildCommand: pip install -r requirements.txt
     # --proxy-headers: trust Render's reverse proxy (X-Forwarded-For/Proto)
     # so rate limiting sees the real client IP and URLs use https.
-    startCommand: uvicorn src.api.main:app --host 0.0.0.0 --port 10000 --proxy-headers
+    # alembic upgrade head runs first (Postgres has no sqlite fallback);
+    # the app's lifespan create_all only covers sqlite/tests.
+    startCommand: alembic upgrade head && uvicorn src.api.main:app --host 0.0.0.0 --port 10000 --proxy-headers
     envVars:
       # sync: false -> set manually in the Render dashboard (never committed).
       - key: JWT_SECRET_KEY
         sync: false
       - key: DATABASE_URL
-        sync: false
+        fromDatabase:
+          name: loan-db
+          property: connectionString
+
+databases:
+  - name: loan-db
+    plan: free
