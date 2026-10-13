@@ -35,6 +35,9 @@ dataset is in use).
 - `/predict` quick estimates assume 6 default fields (disclosed per response).
   Missing details are assumed conservatively; the full 11-field form may
   give a better result.
+- Explanations shown before the SHAP indexing fix (see `docs/SHAP_AUDIT.md`)
+  mixed model-output classes across features and were unreliable; current
+  attributions are covered by additivity tests.
 ## Fairness concerns
 The model consumes `education`, `self_employed`, and `no_of_dependents`
 (plus `marital_status` is NOT present — do not add it without a fairness

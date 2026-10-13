@@ -139,3 +139,14 @@ Missing/blocking: Postgres (data loss), UI hosting, `DEBUG_CLIENT_IP` must stay 
 **High**: suggestion_engine tests; wire-or-delete admin dead code; ` LoanApplication` model + per-user history (was planned pre-restore); pin remaining deps; add `pytest-cov` to requirements or uninstall.
 **Medium**: refresh tokens; signup anti-enumeration; request-id logging; Streamlit deploy target; delete `debug.py` after hop check.
 **Nice-to-have**: EDA notebook content; archive `gb_model.pkl`; UI component tests; Hindi NLG (roadmap).
+
+## 10. Phase 2 delta (what changed after this audit)
+
+- SHAP misindexing fixed (`docs/SHAP_AUDIT.md`): explanations before the fix
+  mixed class slices; old charts/reasons were wrong on ~half the features.
+- `/predict` is ML-backed with disclosed defaults (heuristic kept as fallback).
+- New: `applications` history (IDOR-safe endpoints + sidebar page),
+  `/emi` + EMI page, repaired `/admin/*` + Admin page, What-If + PDF kept.
+- `pytest-cov` added to dev requirements; coverage target >= 65%.
+- Render: Postgres block + Alembic in startCommand, UI service added.
+  `debug.py` still pending deletion after the hop-count check.
