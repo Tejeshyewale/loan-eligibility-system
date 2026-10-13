@@ -102,15 +102,20 @@ def explain_prediction(raw_input: dict) -> dict:
     proba = 1.0 - proba_rejected
 
     shap_values = explainer.shap_values(X_processed)
-    # TreeExplainer may return list (binary) or 2D array; take class-1 / single row.
+    # TreeExplainer shapes vary by version: list of per-class arrays, 2D
+    # (rows, features), or 3D (rows, features, classes) as returned by
+    # shap 0.52 for binary models. Always take the single row and the
+    # class-1 (Rejected) contributions to match predict_proba[:, 1].
     import numpy as np
     sv = shap_values
     if isinstance(sv, list):
         sv = sv[1] if len(sv) > 1 else sv[0]
     sv = np.asarray(sv)
-    if sv.ndim == 2:
+    if sv.ndim == 3:
+        sv = sv[0, :, 1]
+    elif sv.ndim == 2:
         sv = sv[0]
-    sv = sv.reshape(-1)
+    sv = np.asarray(sv).reshape(-1)
     # SHAP values explain P(Rejected); negate so positive = towards approval.
     sv = -sv
 
