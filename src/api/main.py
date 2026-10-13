@@ -8,6 +8,7 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
 from src.api.auth_routes import router as auth_router
+from src.api.admin_routes import router as admin_router
 from src.api.debug import router as debug_router
 from src.api.predict import router as predict_router
 from src.api.rate_limit import limiter
@@ -81,6 +82,7 @@ def root():
     return {"status": "API running"}
 
 app.include_router(auth_router)
+app.include_router(admin_router)
 app.include_router(predict_router)
 app.include_router(emi_router)
 app.include_router(history_router)
