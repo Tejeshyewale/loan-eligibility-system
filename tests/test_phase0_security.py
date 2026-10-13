@@ -48,6 +48,7 @@ def test_app_fails_without_secret_key(tmp_path):
 def test_legacy_sha256_login_rehashes_to_bcrypt(client, db_session):
     """Correct legacy-hash login succeeds AND upgrades the stored hash."""
     import bcrypt
+
     from src.database.models import User
 
     legacy_hex = hashlib.sha256(b"oldpass123").hexdigest()
@@ -68,6 +69,7 @@ def test_legacy_sha256_login_rehashes_to_bcrypt(client, db_session):
 def test_startup_creates_tables_on_empty_db(tmp_path, monkeypatch):
     """Lifespan must create all tables when pointed at a fresh empty DB file."""
     import asyncio
+
     from sqlalchemy import create_engine, inspect
 
     import src.api.main as main_module
@@ -207,6 +209,7 @@ def test_login_rate_limit_triggers(tmp_path):
 def test_negative_proxy_hops_rejected():
     """TRUSTED_PROXY_HOPS=-1 must fail settings validation, not silently run."""
     from pydantic import ValidationError
+
     from src.core.settings import Settings
 
     with pytest.raises(ValidationError):

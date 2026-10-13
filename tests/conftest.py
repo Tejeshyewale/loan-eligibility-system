@@ -57,7 +57,7 @@ def client(db_session):
 @pytest.fixture()
 def auth_headers(client):
     """Signup + login, return Authorization headers (unique user per test)."""
-    username = "user_%s" % str(id(object()))[-6:]
+    username = f"user_{str(id(object()))[-6:]}"
     client.post("/auth/signup", json={"username": username, "password": "secret123"})
     res = client.post("/auth/login", json={"username": username, "password": "secret123"})
     assert res.status_code == 200

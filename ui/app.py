@@ -1,9 +1,11 @@
 import matplotlib
+
 matplotlib.use("Agg")
-import matplotlib.pyplot as plt
 import os
-import streamlit as st
+
+import matplotlib.pyplot as plt
 import requests
+import streamlit as st
 from dotenv import load_dotenv
 from requests.exceptions import ConnectionError, Timeout
 
@@ -208,7 +210,7 @@ def build_shap_chart(reasons_detail):
 
     y_pos = range(len(items))
     bars = ax.barh(list(y_pos), values, color=colors, height=0.55, edgecolor="none")
-    for bar, v in zip(bars, values):
+    for bar, v in zip(bars, values, strict=True):
         if v != 0:
             ax.text(
                 v + (0.02 * max(abs(min(values, default=1)), abs(max(values, default=1)), 1)
@@ -346,6 +348,7 @@ def build_report_pdf(payload, data):
     """
     import io
     from datetime import datetime
+
     from fpdf import FPDF
 
     TEAL = (15, 118, 110)
@@ -429,7 +432,6 @@ def build_report_pdf(payload, data):
     pdf.set_fill_color(*box_fill)
     pdf.set_text_color(*box_text)
     pdf.set_font("Helvetica", "B", 15)
-    y0 = pdf.get_y()
     pdf.set_x(18)
     pdf.multi_cell(174, 10,
                    _pdf_text(f"{verdict_word}  -  Confidence {confidence:.0%}"),

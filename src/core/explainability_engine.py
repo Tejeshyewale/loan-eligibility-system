@@ -115,7 +115,7 @@ def explain_prediction(raw_input: dict) -> dict:
     sv = -sv
 
     ranked = []
-    for fname, val in zip(feature_names, sv):
+    for fname, val in zip(feature_names, sv, strict=True):
         v = float(val)
         ranked.append({
             "feature_name": _human_readable_name(str(fname)),

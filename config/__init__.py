@@ -4,8 +4,6 @@ Usage:
     from config import config  # or get_config()
     config.suggestion_engine.cibil_good_threshold
 """
-from functools import lru_cache
-
 from .config_schema import AppConfig, load_config
 
 _config_singleton: AppConfig | None = None

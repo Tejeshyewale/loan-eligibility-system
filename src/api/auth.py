@@ -1,14 +1,15 @@
-import bcrypt
 import hashlib
 from datetime import datetime, timedelta
-from jose import jwt, JWTError
+
+import bcrypt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
+from jose import JWTError, jwt
 
 from src.core.settings import (
-    JWT_SECRET_KEY,
-    JWT_ALGORITHM,
     ACCESS_TOKEN_EXPIRE_MINUTES,
+    JWT_ALGORITHM,
+    JWT_SECRET_KEY,
 )
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
@@ -79,4 +80,4 @@ def get_current_user(token: str = Depends(oauth2_scheme)):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid token"
-        )
+        ) from None

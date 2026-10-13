@@ -1,4 +1,5 @@
 from fastapi import APIRouter, HTTPException
+
 from src.database.db import SessionLocal
 from src.database.models import LoanApplication
 
