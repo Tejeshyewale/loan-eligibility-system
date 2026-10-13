@@ -1,4 +1,4 @@
-"""Tests for the legacy heuristic /predict endpoint."""
+"""Tests for the /predict quick-estimate endpoint (ML-backed)."""
 
 VALID = {"income": 500000, "loan_amount": 200000, "cibil_score": 750,
          "bank_assets": 150000, "luxury_assets": 150000}
@@ -9,7 +9,22 @@ def test_predict_valid_baseline(client, auth_headers):
     assert res.status_code == 200
     body = res.json()
     assert body["loan_approved"] is True
-    assert body["score"] == 5
+    assert body["estimate"] is True
+    assert body["fallback"] is False
+    assert body["probability"] is not None and 0.0 <= body["probability"] <= 1.0
+    assert body["score"] == min(5, max(0, round(body["probability"] * 5)))
+    assert set(body["assumed_defaults"]) == {
+        "no_of_dependents", "education", "self_employed", "loan_term",
+        "residential_assets_value", "commercial_assets_value",
+    }
+
+
+def test_heuristic_fallback_function_kept(client):
+    """Legacy heuristic survives as a pure function for tests/fallback."""
+    from src.api.predict import LoanRequest, heuristic_score
+
+    approved, score = heuristic_score(LoanRequest(**VALID))
+    assert (approved, score) == (True, 5)
 
 
 def test_predict_rejected_profile(client, auth_headers):

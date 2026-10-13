@@ -718,8 +718,8 @@ if "token" in st.session_state:
         st.divider()
         st.markdown("<span class='h3-card'>What to do</span>", unsafe_allow_html=True)
         st.markdown(
-            "<span class='caption-text'><b>Quick Check</b> — five-field instant "
-            "heuristic verdict.<br><b>Explainable AI</b> — full application with "
+            "<span class='caption-text'><b>Quick Estimate</b> — five-field "
+            "verdict from the same model, details assumed.<br><b>Explainable AI</b> — full application with "
             "reasons and improvement tips.</span>",
             unsafe_allow_html=True,
         )
@@ -729,14 +729,15 @@ if "token" in st.session_state:
             st.rerun()
         st.caption("Demo build — approvals are model estimates, not bank offers.")
 
-    tab_quick, tab_explain = st.tabs(["Quick Check", "Explainable AI"])
+    tab_quick, tab_explain = st.tabs(["Quick Estimate", "Explainable AI"])
 
-    # ---------------- TAB 1: existing /predict flow (unchanged logic) ----------------
+    # ---------------- TAB 1: /predict quick estimate (ML, 6 fields assumed) ----------------
     with tab_quick:
         with st.container(border=True):
             card_heading(
                 "zap", "Loan Application",
-                "Five-field instant heuristic check.",
+                "Five-field estimate — same model as Explainable AI, with "
+                "typical values assumed for the details below.",
             )
 
             col1, col2 = st.columns(2)
@@ -788,6 +789,19 @@ if "token" in st.session_state:
                             st.error("Loan Rejected")
 
                         st.metric("Eligibility Score", data["score"])
+                        if data.get("probability") is not None:
+                            st.caption(
+                                f"Model probability: {data['probability']:.0%} "
+                                f"(estimate — details assumed, see below).")
+                        if data.get("fallback"):
+                            st.caption(
+                                "Model temporarily unavailable — heuristic "
+                                "fallback was used for this estimate.")
+                        assumed = data.get("assumed_defaults") or {}
+                        if assumed:
+                            with st.expander("Details assumed for this estimate"):
+                                for k, v in assumed.items():
+                                    st.write(f"- **{k.replace('_', ' ')}**: {v}")
 
                         st.markdown("<span class='h3-card'>Evaluation Summary</span>", unsafe_allow_html=True)
                         for k, v in data["criteria"].items():
