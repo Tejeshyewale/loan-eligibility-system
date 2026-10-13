@@ -47,4 +47,20 @@ jobs:
           python-version: "3.12"
       - run: pip install -r requirements.txt -r requirements-dev.txt
       - run: alembic upgrade head
-      - run: pytest tests/test_db.py tests/test_auth.py -q
+      - run: pytest tests/test_db.py tests/test_auth.py tests/test_history.py tests/test_admin.py tests/test_emi.py -q
+      # Live Postgres flow (no sqlite override): proves signup/login/predict/
+      # history/emi/admin work end-to-end against the real database.
+      - run: |
+          python - <<'EOF'
+          from fastapi.testclient import TestClient
+          from src.api.main import app
+          with TestClient(app) as client:
+              assert client.post("/auth/signup", json={"username": "ci_pg", "password": "secret123"}).status_code == 200
+              tok = client.post("/auth/login", json={"username": "ci_pg", "password": "secret123"}).json()["access_token"]
+              h = {"Authorization": "Bearer " + tok}
+              assert client.post("/predict", json={"income": 800000, "loan_amount": 200000, "cibil_score": 750, "bank_assets": 100000, "luxury_assets": 50000}, headers=h).status_code == 200
+              assert client.get("/history", headers=h).json()["total"] >= 1
+              assert client.post("/emi", json={"loan_amount": 1000000, "annual_rate_pct": 9.0, "tenure_value": 20, "tenure_unit": "years"}).status_code == 200
+              assert client.get("/admin/stats", headers=h).status_code == 403
+          print("PG live flow OK")
+          EOF
