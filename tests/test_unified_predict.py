@@ -44,7 +44,7 @@ def _five_of(eleven):
 @pytest.mark.parametrize("profile", PROFILES)
 def test_predict_matches_explain_on_identical_inputs(client, auth_headers, profile):
     """Same 11 fields through both endpoints => same verdict, no fallback."""
-    eleven = dict(zip(ELEVEN_KEYS, profile))
+    eleven = dict(zip(ELEVEN_KEYS, profile, strict=True))
     quick = client.post("/predict", json=_five_of(eleven), headers=auth_headers)
 
     # Rebuild EXACTLY what /predict assumed: 5 real fields + 6 config defaults.

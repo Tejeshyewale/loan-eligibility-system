@@ -6,7 +6,7 @@ from src.utils.logger import get_logger
 logger = get_logger(__name__)
 
 def load_schema(schema_path):
-    with open(schema_path, "r") as file:
+    with open(schema_path) as file:
         schema = yaml.safe_load(file)
     return schema["columns"]
 

@@ -1,5 +1,5 @@
-import streamlit as st
 import requests
+import streamlit as st
 
 API = "http://127.0.0.1:8000"
 

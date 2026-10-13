@@ -5,7 +5,10 @@ extend-exclude = [".venv", "alembic/versions", "notebooks"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "W"]
-ignore = ["E501"]
+ignore = [
+  "E501", # long lines: UI strings/SQL/table text read better unwrapped
+  "B008", # FastAPI Depends() in defaults is the framework idiom, not a bug
+]
 
 [tool.ruff.lint.isort]
 known-first-party = ["src", "config", "tests"]

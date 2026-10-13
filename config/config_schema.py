@@ -61,7 +61,7 @@ def load_config(path: str = DEFAULT_CONFIG_PATH) -> AppConfig:
             f"[config] Config file not found at '{path}'. "
             f"Expected config/config.yaml to exist with all required thresholds."
         )
-    with open(path, "r", encoding="utf-8") as f:
+    with open(path, encoding="utf-8") as f:
         raw = yaml.safe_load(f)
     if not isinstance(raw, dict):
         raise ValueError(

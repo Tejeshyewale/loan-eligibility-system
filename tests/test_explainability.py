@@ -1,5 +1,6 @@
 """Unit tests for the SHAP explainability engine output structure."""
 from src.core.explainability_engine import explain_prediction
+
 from .conftest import OOD_REJECT_PAYLOAD, STRONG_EXPLAIN_PAYLOAD
 
 

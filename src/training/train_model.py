@@ -1,21 +1,30 @@
-import pandas as pd
-import pickle
-import os
 import json
-import numpy as np
-import xgboost as xgb
+import os
+import pickle
 
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import (
-    accuracy_score, precision_score, recall_score, f1_score,
-    roc_auc_score, confusion_matrix
-)
-from sklearn.linear_model import LogisticRegression
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.preprocessing import LabelEncoder
-from src.features.feature_engineering import create_features
- 
+import numpy as np
+import pandas as pd
+import xgboost as xgb
 from imblearn.over_sampling import SMOTE
+from sklearn.compose import ColumnTransformer
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import (
+    accuracy_score,
+    confusion_matrix,
+    f1_score,
+    precision_score,
+    recall_score,
+    roc_auc_score,
+)
+from sklearn.model_selection import train_test_split
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import LabelEncoder, OneHotEncoder, StandardScaler
+
+from src.features.feature_engineering import create_features
+from src.utils.logger import get_logger
+
+logger = get_logger(__name__)
 
 # Paths
 DATA_PATH = "data/validated/clean_loan_data.csv"
@@ -32,13 +41,6 @@ def load_preprocessor():
     with open(PREPROCESSOR_PATH, "rb") as f:
         return pickle.load(f)
 
-from sklearn.compose import ColumnTransformer
-from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import StandardScaler, OneHotEncoder
-
-from src.utils.logger import get_logger
-
-logger = get_logger(__name__)
 
 # OOD blind-spot fix: nudge the boundary with a small number of synthetic
 # extreme-leverage rejects (low CIBIL + 10x-25x loan-to-income ratio).
@@ -96,9 +98,9 @@ def prepare_data(df):
     y_train = np.concatenate([y_train, np.full(len(synth), reject_label)])
 
     numeric_features = [
-        'no_of_dependents', 'income_annum', 'loan_amount', 'loan_term', 'cibil_score', 
-        'residential_assets_value', 'commercial_assets_value', 'luxury_assets_value', 
-        'bank_asset_value', 'total_assets', 'loan_income_ratio', 'asset_loan_ratio', 
+        'no_of_dependents', 'income_annum', 'loan_amount', 'loan_term', 'cibil_score',
+        'residential_assets_value', 'commercial_assets_value', 'luxury_assets_value',
+        'bank_asset_value', 'total_assets', 'loan_income_ratio', 'asset_loan_ratio',
         'debt_to_income_ratio'
     ]
     categorical_features = ['education', 'self_employed']
@@ -166,11 +168,11 @@ def main():
     os.makedirs("models", exist_ok=True)
     with open(MODEL_PATH, "wb") as f:
         pickle.dump(best_model, f)
-        
+
     # Save the updated preprocessor
     with open(PREPROCESSOR_PATH, "wb") as f:
         pickle.dump(preprocessor, f)
-        
+
     with open(METRICS_PATH, "w") as f:
         json.dump({
             "best_model": best_model_name,
