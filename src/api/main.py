@@ -21,11 +21,15 @@ logger = get_logger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Create tables on startup (idempotent): a fresh deploy with no
-    loan.db gets working tables automatically. `engine` is read from module
-    globals so tests can point it at an empty scratch DB."""
-    Base.metadata.create_all(bind=engine)
-    logger.info("Database tables ensured.")
+    """Ensure tables exist on startup (idempotent).
+
+    This is the fallback path for sqlite/tests. On Render, migrations run
+    first via `alembic upgrade head` in startCommand; create_all is then a
+    harmless no-op. `engine` is read from module globals so tests can point
+    it at an empty scratch DB."""
+    if engine.url.get_backend_name() == "sqlite":
+        Base.metadata.create_all(bind=engine)
+        logger.info("Database tables ensured (sqlite fallback).")
     yield
 
 
