@@ -11,6 +11,7 @@ from src.api.auth_routes import router as auth_router
 from src.api.debug import router as debug_router
 from src.api.predict import router as predict_router
 from src.api.rate_limit import limiter
+from src.api.routes.history import router as history_router
 from src.api.routes.predict_explain import router as predict_explain_router
 from src.core.settings import CORS_ALLOWED_ORIGINS
 from src.database.db import engine
@@ -81,4 +82,5 @@ def root():
 app.include_router(auth_router)
 app.include_router(predict_router)
 app.include_router(predict_explain_router)
+app.include_router(history_router)
 app.include_router(debug_router)

@@ -10,12 +10,16 @@ warning log + "fallback": true) rather than 500ing.
 """
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session
 
 from config import config as _app_config
 from src.api.auth import get_current_user
 from src.api.rate_limit import limiter
+from src.api.routes.history import log_application, resolve_user_id
 from src.core.explainability_engine import explain_prediction
+from src.core.reasoning_generator import generate_reasons
 from src.core.settings import RATE_LIMIT_PREDICT
+from src.database.db import get_db
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -82,12 +86,15 @@ def _ml_estimate(data: LoanRequest) -> dict:
         "score": score,
         "probability": prob,
         "assumed_defaults": assumed,
+        "full_input": full_input,
+        "ranked": result["ranked"],
     }
 
 
 @router.post("/predict")
 @limiter.limit(RATE_LIMIT_PREDICT)
-def predict(request: Request, data: LoanRequest, user: dict = Depends(get_current_user)):
+def predict(request: Request, data: LoanRequest, user: dict = Depends(get_current_user),
+            db: Session = Depends(get_db)):
     try:
         est = _ml_estimate(data)
         fallback = False
@@ -101,8 +108,29 @@ def predict(request: Request, data: LoanRequest, user: dict = Depends(get_curren
             "score": score,
             "probability": None,
             "assumed_defaults": {},
+            "full_input": {
+                "income_annum": data.income,
+                "loan_amount": data.loan_amount,
+                "cibil_score": data.cibil_score,
+                "bank_asset_value": data.bank_assets,
+                "luxury_assets_value": data.luxury_assets,
+            },
+            "ranked": [],
         }
         fallback = True
+
+    if est["probability"] is not None:
+        reasons = generate_reasons(est["ranked"], "Approved" if est["loan_approved"] else "Rejected")
+    else:
+        reasons = []
+    try:
+        uid = resolve_user_id(db, user)
+        if uid is not None:
+            log_application(db, uid, est["full_input"],
+                            "Approved" if est["loan_approved"] else "Rejected",
+                            est["probability"], True, reasons, [])
+    except Exception as exc:
+        logger.warning("History logging failed (response unaffected): %s", exc)
 
     return {
         "applicant": user["username"],  # ✅ FIXED (no more sub)
