@@ -678,6 +678,16 @@ if "token" not in st.session_state:
                         res = do_login(username, password)
                         if res.status_code == 200:
                             st.session_state["token"] = res.json()["access_token"]
+                            # Sidebar Admin option: verify against the API now
+                            # (the Admin page itself re-verifies on every visit).
+                            try:
+                                chk = requests.get(
+                                    f"{API_URL}/admin/model",
+                                    headers={"Authorization": f"Bearer {st.session_state['token']}"},
+                                    timeout=REQUEST_TIMEOUT)
+                                st.session_state["is_admin"] = (chk.status_code == 200)
+                            except (ConnectionError, Timeout):
+                                st.session_state["is_admin"] = False
                             st.success("Login successful")
                             st.rerun()
                         else:
@@ -704,6 +714,276 @@ if "token" not in st.session_state:
                     except (ConnectionError, Timeout) as exc:
                         st.error(api_error_message(exc=exc))
 
+def _auth_headers():
+    return {"Authorization": f"Bearer {st.session_state['token']}"}
+
+
+def _inr_short(value):
+    """Compact Indian-rupee formatting: 1.2Cr / 5L / 80K."""
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return str(value)
+    if v >= 10_000_000:
+        return f"{v / 10_000_000:g}Cr"
+    if v >= 100_000:
+        return f"{v / 100_000:g}L"
+    if v >= 1_000:
+        return f"{v / 1_000:g}K"
+    return f"{int(v)}"
+
+
+def _history_summary(item):
+    d = item.get("input_data", {}) or {}
+    cibil = d.get("cibil_score", "?")
+    loan = _inr_short(d.get("loan_amount", "?"))
+    return f"CIBIL {cibil}, Loan {loan}"
+
+
+def _history_timestamp(item):
+    ts = item.get("created_at") or ""
+    return ts.replace("T", " ")[:16]
+
+
+def render_emi_page():
+    """EMI Calculator: inputs -> API -> metrics, verdict, Plotly charts."""
+    import plotly.express as px
+
+    with st.container(border=True):
+        card_heading("wallet", "EMI Calculator",
+                     "Plan a loan: instalment, interest split and affordability.")
+        col1, col2 = st.columns(2)
+        with col1:
+            loan_amount = st.number_input("Loan Amount (Rs.)", min_value=1, step=50000,
+                                          value=1_000_000, key="emi_loan")
+            annual_rate = st.number_input("Annual Interest Rate (%)", min_value=0.0,
+                                          max_value=100.0, step=0.5, value=9.0,
+                                          key="emi_rate")
+        with col2:
+            tenure_value = st.number_input("Tenure", min_value=1, max_value=50, step=1,
+                                           value=20, key="emi_tenure")
+            tenure_unit = st.selectbox("Tenure Unit", ["years", "months"], key="emi_unit")
+        col3, col4 = st.columns(2)
+        with col3:
+            monthly_income = st.number_input("Monthly Income (Rs., optional)",
+                                             min_value=0, step=5000, value=0,
+                                             key="emi_income")
+        with col4:
+            existing_emi = st.number_input("Existing EMIs (Rs./month)", min_value=0,
+                                           step=1000, value=0, key="emi_existing")
+
+        if st.button("Calculate EMI", key="emi_btn"):
+            payload = {"loan_amount": loan_amount, "annual_rate_pct": annual_rate,
+                       "tenure_value": tenure_value, "tenure_unit": tenure_unit,
+                       "existing_emi": existing_emi}
+            if monthly_income:
+                payload["monthly_income"] = monthly_income
+            try:
+                with st.spinner("Calculating..."):
+                    res = requests.post(f"{API_URL}/emi", json=payload,
+                                        timeout=REQUEST_TIMEOUT)
+                if res.status_code != 200:
+                    st.error(api_error_message(res))
+                    return
+                out = res.json()
+            except (ConnectionError, Timeout) as exc:
+                st.error(api_error_message(exc=exc))
+                return
+
+            m1, m2, m3 = st.columns(3)
+            m1.metric("Monthly EMI", f"Rs. {out['emi']:,.0f}")
+            m2.metric("Total Interest", f"Rs. {out['total_interest']:,.0f}")
+            m3.metric("Total Payment", f"Rs. {out['total_payment']:,.0f}")
+
+            aff = out.get("affordability")
+            if aff:
+                band, ratio = aff["band"], aff["emi_to_income_ratio"]
+                if band == "ok":
+                    st.success(f"Affordable — EMIs take {ratio:.0%} of income. {aff['message']}")
+                elif band == "risky":
+                    st.warning(f"Risky — EMIs take {ratio:.0%} of income. {aff['message']}")
+                else:
+                    st.error(f"Not advisable — EMIs take {ratio:.0%} of income. {aff['message']}")
+            else:
+                st.caption("Add a monthly income to get an affordability verdict.")
+
+            sched = out.get("schedule", [])
+            if sched:
+                months = [r["month"] for r in sched]
+                fig = px.line(x=months, y=[r["balance"] for r in sched],
+                              labels={"x": "Month", "y": "Remaining Balance (Rs.)"},
+                              title="Loan Balance Over Time",
+                              color_discrete_sequence=[BRAND])
+                fig.update_layout(font_family="Inter", margin=dict(l=10, r=10, t=40, b=10),
+                                  plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)")
+                st.plotly_chart(fig, width="stretch")
+                pie = px.pie(names=["Principal", "Interest"],
+                             values=[loan_amount, out["total_interest"]],
+                             title="Principal vs Interest",
+                             color_discrete_sequence=[BRAND, "#F59E0B"])
+                pie.update_layout(font_family="Inter", margin=dict(l=10, r=10, t=40, b=10),
+                                  paper_bgcolor="rgba(0,0,0,0)")
+                st.plotly_chart(pie, width="stretch")
+        st.caption("Estimate based on a demonstration model. Not a bank decision.")
+
+
+def render_history_page():
+    """My History: newest-first cards with detail expanders and deletion."""
+    import plotly.express as px
+
+    with st.container(border=True):
+        card_heading("bar-chart", "My History",
+                     "Every prediction you made, newest first.")
+        limit = st.session_state.get("hist_limit", 20)
+        try:
+            with st.spinner("Loading history..."):
+                res = requests.get(f"{API_URL}/history",
+                                   params={"limit": limit, "offset": 0},
+                                   headers=_auth_headers(), timeout=REQUEST_TIMEOUT)
+            if res.status_code != 200:
+                st.error(api_error_message(res))
+                return
+            data = res.json()
+        except (ConnectionError, Timeout) as exc:
+            st.error(api_error_message(exc=exc))
+            return
+
+        items, total = data.get("items", []), data.get("total", 0)
+        if not items:
+            st.markdown("<span class='body-text'>No applications yet — "
+                        "try the Explainable AI tab.</span>", unsafe_allow_html=True)
+            return
+
+        probs = [float(i["probability"]) for i in items
+                 if i.get("probability") is not None]
+        if len(probs) >= 2:
+            trend = px.line(y=list(reversed(probs)), labels={"x": "Check #", "y": "Approval Probability"},
+                            title="Approval Probability Trend",
+                            color_discrete_sequence=[BRAND])
+            trend.update_layout(font_family="Inter", margin=dict(l=10, r=10, t=40, b=10),
+                                plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)")
+            st.plotly_chart(trend, width="stretch")
+
+        for item in items:
+            iid = item["id"]
+            verdict = item["prediction"]
+            prob = item.get("probability")
+            prob_txt = f"{prob:.0%}" if prob is not None else "n/a"
+            tag = "estimate" if item.get("is_estimate") else "full"
+            with st.container(border=True):
+                st.markdown(
+                    f"<div class='card-title-row'>"
+                    f"{icon('check-circle' if verdict == 'Approved' else 'x-circle', size=19, color=TEAL)}"
+                    f"<span class='h3-card'>{verdict} — {prob_txt}</span></div>"
+                    f"<div class='caption-text'>{_history_timestamp(item)} &bull; "
+                    f"{_history_summary(item)} &bull; {tag}</div>",
+                    unsafe_allow_html=True,
+                )
+                with st.expander("View full detail"):
+                    for reason in item.get("top_reasons", []):
+                        st.info(reason)
+                    for j, tip in enumerate(item.get("suggestions", []), 1):
+                        st.success(f"**{j}.** {tip}")
+                    st.caption("Model version: "
+                               f"{item.get('model_version', 'unknown')}")
+                if st.button("Delete", key=f"hist_del_{iid}"):
+                    st.session_state[f"hist_confirm_{iid}"] = True
+                if st.session_state.get(f"hist_confirm_{iid}"):
+                    st.warning("Delete this record permanently?")
+                    if st.button("Yes, delete it", key=f"hist_yes_{iid}"):
+                        try:
+                            dres = requests.delete(f"{API_URL}/history/{iid}",
+                                                   headers=_auth_headers(),
+                                                   timeout=REQUEST_TIMEOUT)
+                            if dres.status_code == 200:
+                                st.session_state.pop(f"hist_confirm_{iid}", None)
+                                st.rerun()
+                            else:
+                                st.error(api_error_message(dres))
+                        except (ConnectionError, Timeout) as exc:
+                            st.error(api_error_message(exc=exc))
+
+        if total > len(items):
+            st.caption(f"Showing {len(items)} of {total}.")
+            if st.button("Load more", key="hist_more"):
+                st.session_state["hist_limit"] = limit + 20
+                st.rerun()
+
+        st.divider()
+        st.markdown("<span class='h3-card'>Your data</span>", unsafe_allow_html=True)
+        st.markdown("<span class='caption-text'>Stored per check: inputs, verdict, "
+                    "probability, reasons and suggestions — nothing else. Delete "
+                    "records one by one, or wipe them all below (your account stays).</span>",
+                    unsafe_allow_html=True)
+        if st.button("Delete all my data", key="hist_wipe"):
+            st.session_state["hist_wipe_confirm"] = True
+        if st.session_state.get("hist_wipe_confirm"):
+            st.warning("Delete ALL your history permanently? This cannot be undone.")
+            if st.button("Yes, delete everything", key="hist_wipe_yes"):
+                try:
+                    wres = requests.delete(f"{API_URL}/me/data", headers=_auth_headers(),
+                                           timeout=REQUEST_TIMEOUT)
+                    if wres.status_code == 200:
+                        st.session_state.pop("hist_wipe_confirm", None)
+                        st.session_state["hist_limit"] = 20
+                        st.rerun()
+                    else:
+                        st.error(api_error_message(wres))
+                except (ConnectionError, Timeout) as exc:
+                    st.error(api_error_message(exc=exc))
+
+
+def render_admin_page():
+    """Admin dashboard. Access is re-verified against the API on every visit —
+    a stale token alone never opens this page."""
+    with st.container(border=True):
+        card_heading("landmark", "Admin Dashboard", "Portfolio overview.")
+        try:
+            chk = requests.get(f"{API_URL}/admin/model", headers=_auth_headers(),
+                               timeout=REQUEST_TIMEOUT)
+        except (ConnectionError, Timeout) as exc:
+            st.error(api_error_message(exc=exc))
+            return
+        if chk.status_code != 200:
+            st.error("Admin access required — this account is not an admin.")
+            return
+        try:
+            with st.spinner("Loading admin data..."):
+                stats = requests.get(f"{API_URL}/admin/stats", headers=_auth_headers(),
+                                     timeout=REQUEST_TIMEOUT).json()
+                users = requests.get(f"{API_URL}/admin/users", headers=_auth_headers(),
+                                     timeout=REQUEST_TIMEOUT).json()
+        except (ConnectionError, Timeout) as exc:
+            st.error(api_error_message(exc=exc))
+            return
+
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Total Applications", stats.get("total_applications", 0))
+        rate = stats.get("approval_rate")
+        m2.metric("Approval Rate", f"{rate:.0%}" if rate is not None else "n/a")
+        avg = stats.get("avg_probability")
+        m3.metric("Avg Probability", f"{avg:.0%}" if avg is not None else "n/a")
+        st.caption(f"Model in use: {stats.get('model_version', 'unknown')}")
+
+        import plotly.express as px
+        per_day = stats.get("applications_per_day", [])
+        if per_day:
+            bar = px.bar(x=[d["date"] for d in per_day],
+                         y=[d["count"] for d in per_day],
+                         labels={"x": "Date", "y": "Applications"},
+                         title="Applications Per Day",
+                         color_discrete_sequence=[BRAND])
+            bar.update_layout(font_family="Inter", margin=dict(l=10, r=10, t=40, b=10),
+                              plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)")
+            st.plotly_chart(bar, width="stretch")
+        rows = users.get("users", [])
+        if rows:
+            import pandas as pd
+            st.markdown("<span class='h3-card'>Users</span>", unsafe_allow_html=True)
+            st.dataframe(pd.DataFrame(rows)[["id", "username", "role", "applications"]],
+                         width="stretch", hide_index=True)
+
+
 # ---------------- APP TABS ----------------
 if "token" in st.session_state:
     with st.sidebar:
@@ -714,6 +994,12 @@ if "token" in st.session_state:
         )
         st.markdown("<span class='caption-text'>Secure &bull; Smart &bull; ML-Driven</span>",
                     unsafe_allow_html=True)
+        st.divider()
+        st.markdown("<span class='h3-card'>Navigate</span>", unsafe_allow_html=True)
+        nav_options = ["Check Eligibility", "EMI Calculator", "My History"]
+        if st.session_state.get("is_admin"):
+            nav_options.append("Admin")
+        st.radio("Section", nav_options, key="nav_page", label_visibility="collapsed")
         st.divider()
         st.markdown("<span class='h3-card'>Session</span>", unsafe_allow_html=True)
         st.markdown("<span class='caption-text'>Logged in — session active.</span>",
@@ -728,230 +1014,250 @@ if "token" in st.session_state:
         )
         st.divider()
         if st.button("Log out"):
-            del st.session_state["token"]
+            for key in ("token", "is_admin", "nav_page", "hist_limit",
+                        "hist_wipe_confirm", "whatif_base", "whatif_orig",
+                        "whatif_id", "whatif_live", "whatif_curve", "report"):
+                st.session_state.pop(key, None)
+            for key in [k for k in st.session_state
+                        if k.startswith(("hist_confirm_", "hist_del_",
+                                         "report_pdf_", "download_report_",
+                                         "whatif_"))]:
+                st.session_state.pop(key, None)
             st.rerun()
         st.caption("Demo build — approvals are model estimates, not bank offers.")
 
-    tab_quick, tab_explain = st.tabs(["Quick Estimate", "Explainable AI"])
+    page = st.session_state.get("nav_page", "Check Eligibility")
+    if page == "Check Eligibility":
+        tab_quick, tab_explain = st.tabs(["Quick Estimate", "Explainable AI"])
 
-    # ---------------- TAB 1: /predict quick estimate (ML, 6 fields assumed) ----------------
-    with tab_quick:
-        with st.container(border=True):
-            card_heading(
-                "zap", "Loan Application",
-                "Five-field estimate — same model as Explainable AI, with "
-                "typical values assumed for the details below. Missing details "
-                "are assumed conservatively; the full form may give a better result.",
-            )
-
-            col1, col2 = st.columns(2)
-
-            with col1:
-                income = st.number_input("Annual Income (Rs.)", min_value=0, step=10000)
-                loan_amount = st.number_input("Loan Amount (Rs.)", min_value=0, step=10000)
-                cibil_score = st.slider("CIBIL Score", 300, 900, 700)
-
-            with col2:
-                bank_assets = st.number_input("Bank Assets (Rs.)", min_value=0, step=10000)
-                luxury_assets = st.number_input("Luxury Assets (Rs.)", min_value=0, step=10000)
-
-            if st.button("Check Eligibility"):
-                headers = {
-                    "Authorization": f"Bearer {st.session_state['token']}"
-                }
-
-                payload = {
-                    "income": income,
-                    "loan_amount": loan_amount,
-                    "cibil_score": cibil_score,
-                    "bank_assets": bank_assets,
-                    "luxury_assets": luxury_assets
-                }
-
-                try:
-                    with st.spinner("Checking eligibility..."):
-                        res = requests.post(
-                            f"{API_URL}/predict",
-                            json=payload,
-                            headers=headers,
-                            timeout=REQUEST_TIMEOUT,
-                        )
-
-                    if res.status_code == 200:
-                        data = res.json()
-
-                        st.divider()
-                        st.markdown(
-                            f"<div class='card-title-row'>{icon('bar-chart', size=19, color=TEAL)}"
-                            f"<span class='h3-card'>Result</span></div>",
-                            unsafe_allow_html=True,
-                        )
-
-                        if data["loan_approved"]:
-                            st.success("Loan Approved")
-                        else:
-                            st.error("Loan Rejected")
-
-                        st.metric("Eligibility Score", data["score"])
-                        if data.get("probability") is not None:
-                            st.caption(
-                                f"Model probability: {data['probability']:.0%} "
-                                f"(estimate — details assumed, see below).")
-                        if data.get("fallback"):
-                            st.caption(
-                                "Model temporarily unavailable — heuristic "
-                                "fallback was used for this estimate.")
-                        assumed = data.get("assumed_defaults") or {}
-                        if assumed:
-                            with st.expander("Details assumed for this estimate"):
-                                for k, v in assumed.items():
-                                    st.write(f"- **{k.replace('_', ' ')}**: {v}")
-
-                        st.markdown("<span class='h3-card'>Evaluation Summary</span>", unsafe_allow_html=True)
-                        for k, v in data["criteria"].items():
-                            st.write(f"- **{k}**: {v}")
-                    else:
-                        st.error(api_error_message(res))
-                except (ConnectionError, Timeout) as exc:
-                    st.error(api_error_message(exc=exc))
-
-    # ---------------- TAB 2: /predict-explain flow (unchanged logic) ----------------
-    with tab_explain:
-        with st.container(border=True):
-            card_heading(
-                "sparkles", "Explainable Loan Decision",
-                "Full application: prediction plus reasons and how to improve.",
-            )
-
-            # Progressive disclosure: 3 logical groups, ONE submit button at the end.
-            with st.expander("Personal Details", expanded=True):
-                st.markdown("<span class='caption-text'>Who is applying.</span>", unsafe_allow_html=True)
-                no_of_dependents = st.number_input("Dependents", min_value=0, step=1)
-                education = st.selectbox("Education", ["Graduate", "Not Graduate"])
-                self_employed = st.selectbox("Self Employed", ["Yes", "No"])
-            with st.expander("Loan Details", expanded=True):
-                st.markdown("<span class='caption-text'>Income, requested loan, and credit history.</span>",
-                            unsafe_allow_html=True)
-                income_annum = st.number_input("Annual Income (Rs.)", min_value=0, step=10000, key="ex_income")
-                loan_amount_ex = st.number_input("Loan Amount (Rs.)", min_value=0, step=10000, key="ex_loan")
-                loan_term = st.number_input("Loan Term (years)", min_value=1, step=1)
-                cibil_ex = st.slider("CIBIL Score", 300, 900, 700, key="ex_cibil")
-            with st.expander("Assets", expanded=True):
-                st.markdown("<span class='caption-text'>What backs the application.</span>", unsafe_allow_html=True)
-                residential_assets = st.number_input("Residential Assets (Rs.)", min_value=0, step=10000)
-                commercial_assets = st.number_input("Commercial Assets (Rs.)", min_value=0, step=10000)
-                luxury_assets_ex = st.number_input("Luxury Assets (Rs.)", min_value=0, step=10000, key="ex_luxury")
-                bank_asset_value = st.number_input("Bank Assets (Rs.)", min_value=0, step=10000, key="ex_bank")
-
-            if st.button("Explain My Decision", key="explain_btn"):
-                headers = {"Authorization": f"Bearer {st.session_state['token']}"}
-                payload = {
-                    "no_of_dependents": no_of_dependents,
-                    "education": education,
-                    "self_employed": self_employed,
-                    "income_annum": income_annum,
-                    "loan_amount": loan_amount_ex,
-                    "loan_term": loan_term,
-                    "cibil_score": cibil_ex,
-                    "residential_assets_value": residential_assets,
-                    "commercial_assets_value": commercial_assets,
-                    "luxury_assets_value": luxury_assets_ex,
-                    "bank_asset_value": bank_asset_value,
-                }
-
-                try:
-                    with st.spinner("Analyzing your application..."):
-                        res = requests.post(
-                            f"{API_URL}/predict-explain",
-                            json=payload,
-                            headers=headers,
-                            timeout=REQUEST_TIMEOUT,
-                        )
-
-                    if res.status_code != 200:
-                        st.error(api_error_message(res))
-                    else:
-                        data = res.json()
-                        # Snapshot for the What-If simulator (reactive section
-                        # rendered below; survives slider reruns via session).
-                        st.session_state["whatif_id"] = st.session_state.get("whatif_id", 0) + 1
-                        st.session_state["whatif_base"] = dict(payload)
-                        st.session_state["whatif_orig"] = {
-                            "probability": float(data["probability"]),
-                            "prediction": data["prediction"],
-                        }
-                        # Full snapshot for the Download Report card below.
-                        st.session_state["report"] = {
-                            "id": st.session_state["whatif_id"],
-                            "payload": dict(payload),
-                            "data": data,
-                        }
-                        with st.container(border=True):
-                            if data["prediction"] == "Approved":
-                                st.success(f"Loan Approved — confidence {data['probability']:.0%}")
-                            else:
-                                st.error(f"Loan Rejected — approval chance {data['probability']:.0%}")
-                            st.caption(
-                                "Estimate based on a demonstration model. "
-                                "Not a bank decision.")
-
-                            st.markdown(
-                                f"<div class='card-title-row'>{icon('bar-chart', size=19, color=TEAL)}"
-                                f"<span class='h3-card'>Why this decision</span></div>",
-                                unsafe_allow_html=True,
-                            )
-                            st.pyplot(build_shap_chart(data["reasons_detail"]))
-
-                        with st.container(border=True):
-                            st.markdown(
-                                f"<div class='card-title-row'>{icon('lightbulb', size=19, color=TEAL)}"
-                                f"<span class='h3-card'>Plain-language reasons</span></div>",
-                                unsafe_allow_html=True,
-                            )
-                            for reason in data["top_reasons"]:
-                                st.info(reason)
-
-                        with st.container(border=True):
-                            st.markdown(
-                                f"<div class='card-title-row'>{icon('trending-up', size=19, color=TEAL)}"
-                                f"<span class='h3-card'>How to improve</span></div>",
-                                unsafe_allow_html=True,
-                            )
-                            for i, tip in enumerate(data["suggestions"], 1):
-                                st.success(f"**{i}.** {tip}")
-                except (ConnectionError, Timeout) as exc:
-                    st.error(api_error_message(exc=exc))
-
-        # Download Report card: persists across reruns via session state
-        # (the submit button above is only True on the click rerun).
-        if "report" in st.session_state:
-            rep = st.session_state["report"]
+        # ---------------- TAB 1: /predict quick estimate (ML, 6 fields assumed) ----------------
+        with tab_quick:
             with st.container(border=True):
                 card_heading(
-                    "file-text", "Download Report",
-                    "Your result as a clean PDF — verdict, inputs, chart, reasons.",
+                    "zap", "Loan Application",
+                    "Five-field estimate — same model as Explainable AI, with "
+                    "typical values assumed for the details below. Missing details "
+                    "are assumed conservatively; the full form may give a better result.",
                 )
-                pdf_key = f"report_pdf_{rep['id']}"
-                if pdf_key not in st.session_state:
-                    try:
-                        with st.spinner("Preparing report..."):
-                            st.session_state[pdf_key] = build_report_pdf(
-                                rep["payload"], rep["data"])
-                    except ImportError:
-                        st.error("PDF engine (fpdf2) is not installed on the app host.")
-                        st.session_state[pdf_key] = None
-                if st.session_state[pdf_key]:
-                    st.download_button(
-                        "Download PDF report",
-                        data=st.session_state[pdf_key],
-                        file_name=f"loan_eligibility_report_{rep['data']['prediction'].lower()}.pdf",
-                        mime="application/pdf",
-                        key=f"download_report_{rep['id']}",
-                    )
 
-        # What-If simulator: appears below the results after the first
-        # Explain submission and persists across slider-driven reruns.
-        # (Outside the submit-button block on purpose: the button is only
-        # True on the click rerun, while sliders rerun on every drag.)
-        if "whatif_base" in st.session_state:
-            render_whatif()
+                col1, col2 = st.columns(2)
+
+                with col1:
+                    income = st.number_input("Annual Income (Rs.)", min_value=0, step=10000)
+                    loan_amount = st.number_input("Loan Amount (Rs.)", min_value=0, step=10000)
+                    cibil_score = st.slider("CIBIL Score", 300, 900, 700)
+
+                with col2:
+                    bank_assets = st.number_input("Bank Assets (Rs.)", min_value=0, step=10000)
+                    luxury_assets = st.number_input("Luxury Assets (Rs.)", min_value=0, step=10000)
+
+                if st.button("Check Eligibility"):
+                    headers = {
+                        "Authorization": f"Bearer {st.session_state['token']}"
+                    }
+
+                    payload = {
+                        "income": income,
+                        "loan_amount": loan_amount,
+                        "cibil_score": cibil_score,
+                        "bank_assets": bank_assets,
+                        "luxury_assets": luxury_assets
+                    }
+
+                    try:
+                        with st.spinner("Checking eligibility..."):
+                            res = requests.post(
+                                f"{API_URL}/predict",
+                                json=payload,
+                                headers=headers,
+                                timeout=REQUEST_TIMEOUT,
+                            )
+
+                        if res.status_code == 200:
+                            data = res.json()
+
+                            st.divider()
+                            st.markdown(
+                                f"<div class='card-title-row'>{icon('bar-chart', size=19, color=TEAL)}"
+                                f"<span class='h3-card'>Result</span></div>",
+                                unsafe_allow_html=True,
+                            )
+
+                            if data["loan_approved"]:
+                                st.success("Loan Approved")
+                            else:
+                                st.error("Loan Rejected")
+
+                            st.metric("Eligibility Score", data["score"])
+                            if data.get("probability") is not None:
+                                st.caption(
+                                    f"Model probability: {data['probability']:.0%} "
+                                    f"(estimate — details assumed, see below).")
+                            if data.get("fallback"):
+                                st.caption(
+                                    "Model temporarily unavailable — heuristic "
+                                    "fallback was used for this estimate.")
+                            assumed = data.get("assumed_defaults") or {}
+                            if assumed:
+                                with st.expander("Details assumed for this estimate"):
+                                    for k, v in assumed.items():
+                                        st.write(f"- **{k.replace('_', ' ')}**: {v}")
+
+                            st.markdown("<span class='h3-card'>Evaluation Summary</span>", unsafe_allow_html=True)
+                            for k, v in data["criteria"].items():
+                                st.write(f"- **{k}**: {v}")
+                        else:
+                            st.error(api_error_message(res))
+                    except (ConnectionError, Timeout) as exc:
+                        st.error(api_error_message(exc=exc))
+
+        # ---------------- TAB 2: /predict-explain flow (unchanged logic) ----------------
+        with tab_explain:
+            with st.container(border=True):
+                card_heading(
+                    "sparkles", "Explainable Loan Decision",
+                    "Full application: prediction plus reasons and how to improve.",
+                )
+
+                # Progressive disclosure: 3 logical groups, ONE submit button at the end.
+                with st.expander("Personal Details", expanded=True):
+                    st.markdown("<span class='caption-text'>Who is applying.</span>", unsafe_allow_html=True)
+                    no_of_dependents = st.number_input("Dependents", min_value=0, step=1)
+                    education = st.selectbox("Education", ["Graduate", "Not Graduate"])
+                    self_employed = st.selectbox("Self Employed", ["Yes", "No"])
+                with st.expander("Loan Details", expanded=True):
+                    st.markdown("<span class='caption-text'>Income, requested loan, and credit history.</span>",
+                                unsafe_allow_html=True)
+                    income_annum = st.number_input("Annual Income (Rs.)", min_value=0, step=10000, key="ex_income")
+                    loan_amount_ex = st.number_input("Loan Amount (Rs.)", min_value=0, step=10000, key="ex_loan")
+                    loan_term = st.number_input("Loan Term (years)", min_value=1, step=1)
+                    cibil_ex = st.slider("CIBIL Score", 300, 900, 700, key="ex_cibil")
+                with st.expander("Assets", expanded=True):
+                    st.markdown("<span class='caption-text'>What backs the application.</span>", unsafe_allow_html=True)
+                    residential_assets = st.number_input("Residential Assets (Rs.)", min_value=0, step=10000)
+                    commercial_assets = st.number_input("Commercial Assets (Rs.)", min_value=0, step=10000)
+                    luxury_assets_ex = st.number_input("Luxury Assets (Rs.)", min_value=0, step=10000, key="ex_luxury")
+                    bank_asset_value = st.number_input("Bank Assets (Rs.)", min_value=0, step=10000, key="ex_bank")
+
+                if st.button("Explain My Decision", key="explain_btn"):
+                    headers = {"Authorization": f"Bearer {st.session_state['token']}"}
+                    payload = {
+                        "no_of_dependents": no_of_dependents,
+                        "education": education,
+                        "self_employed": self_employed,
+                        "income_annum": income_annum,
+                        "loan_amount": loan_amount_ex,
+                        "loan_term": loan_term,
+                        "cibil_score": cibil_ex,
+                        "residential_assets_value": residential_assets,
+                        "commercial_assets_value": commercial_assets,
+                        "luxury_assets_value": luxury_assets_ex,
+                        "bank_asset_value": bank_asset_value,
+                    }
+
+                    try:
+                        with st.spinner("Analyzing your application..."):
+                            res = requests.post(
+                                f"{API_URL}/predict-explain",
+                                json=payload,
+                                headers=headers,
+                                timeout=REQUEST_TIMEOUT,
+                            )
+
+                        if res.status_code != 200:
+                            st.error(api_error_message(res))
+                        else:
+                            data = res.json()
+                            # Snapshot for the What-If simulator (reactive section
+                            # rendered below; survives slider reruns via session).
+                            st.session_state["whatif_id"] = st.session_state.get("whatif_id", 0) + 1
+                            st.session_state["whatif_base"] = dict(payload)
+                            st.session_state["whatif_orig"] = {
+                                "probability": float(data["probability"]),
+                                "prediction": data["prediction"],
+                            }
+                            # Full snapshot for the Download Report card below.
+                            st.session_state["report"] = {
+                                "id": st.session_state["whatif_id"],
+                                "payload": dict(payload),
+                                "data": data,
+                            }
+                            with st.container(border=True):
+                                if data["prediction"] == "Approved":
+                                    st.success(f"Loan Approved — confidence {data['probability']:.0%}")
+                                else:
+                                    st.error(f"Loan Rejected — approval chance {data['probability']:.0%}")
+                                st.caption(
+                                    "Estimate based on a demonstration model. "
+                                    "Not a bank decision.")
+
+                                st.markdown(
+                                    f"<div class='card-title-row'>{icon('bar-chart', size=19, color=TEAL)}"
+                                    f"<span class='h3-card'>Why this decision</span></div>",
+                                    unsafe_allow_html=True,
+                                )
+                                st.pyplot(build_shap_chart(data["reasons_detail"]))
+
+                            with st.container(border=True):
+                                st.markdown(
+                                    f"<div class='card-title-row'>{icon('lightbulb', size=19, color=TEAL)}"
+                                    f"<span class='h3-card'>Plain-language reasons</span></div>",
+                                    unsafe_allow_html=True,
+                                )
+                                for reason in data["top_reasons"]:
+                                    st.info(reason)
+
+                            with st.container(border=True):
+                                st.markdown(
+                                    f"<div class='card-title-row'>{icon('trending-up', size=19, color=TEAL)}"
+                                    f"<span class='h3-card'>How to improve</span></div>",
+                                    unsafe_allow_html=True,
+                                )
+                                for i, tip in enumerate(data["suggestions"], 1):
+                                    st.success(f"**{i}.** {tip}")
+                    except (ConnectionError, Timeout) as exc:
+                        st.error(api_error_message(exc=exc))
+
+            # Download Report card: persists across reruns via session state
+            # (the submit button above is only True on the click rerun).
+            if "report" in st.session_state:
+                rep = st.session_state["report"]
+                with st.container(border=True):
+                    card_heading(
+                        "file-text", "Download Report",
+                        "Your result as a clean PDF — verdict, inputs, chart, reasons.",
+                    )
+                    pdf_key = f"report_pdf_{rep['id']}"
+                    if pdf_key not in st.session_state:
+                        try:
+                            with st.spinner("Preparing report..."):
+                                st.session_state[pdf_key] = build_report_pdf(
+                                    rep["payload"], rep["data"])
+                        except ImportError:
+                            st.error("PDF engine (fpdf2) is not installed on the app host.")
+                            st.session_state[pdf_key] = None
+                    if st.session_state[pdf_key]:
+                        st.download_button(
+                            "Download PDF report",
+                            data=st.session_state[pdf_key],
+                            file_name=f"loan_eligibility_report_{rep['data']['prediction'].lower()}.pdf",
+                            mime="application/pdf",
+                            key=f"download_report_{rep['id']}",
+                        )
+
+            # What-If simulator: appears below the results after the first
+            # Explain submission and persists across slider-driven reruns.
+            # (Outside the submit-button block on purpose: the button is only
+            # True on the click rerun, while sliders rerun on every drag.)
+            if "whatif_base" in st.session_state:
+                render_whatif()
+
+    elif page == "EMI Calculator":
+        render_emi_page()
+    elif page == "My History":
+        render_history_page()
+    elif page == "Admin":
+        render_admin_page()
+    else:  # unknown persisted selection (e.g. logged-out admin): fall back
+        st.session_state["nav_page"] = "Check Eligibility"
+        st.rerun()

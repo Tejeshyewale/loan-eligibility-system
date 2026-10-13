@@ -290,3 +290,36 @@ def test_debug_client_ip_when_enabled(client, monkeypatch):
     assert body["peer"] == "testclient"
     assert body["trusted_proxy_hops"] == 1
     assert body["resolved_ip"] == "10.0.0.7"
+
+
+def test_all_expected_routes_registered():
+    """A dropped include_router (as happened with predict-explain during the
+    EMI wiring) must fail loudly instead of 404ing in production."""
+    from src.api.main import app
+
+    def _iter_routes(routes):
+        for route in routes:
+            # Starlette 1.x mounts included routers as _IncludedRouter
+            # (path None); the real APIRoutes live on .original_router.
+            inner = getattr(route, "original_router", None)
+            if inner is not None and hasattr(inner, "routes"):
+                yield from _iter_routes(inner.routes)
+                continue
+            if hasattr(route, "path") and hasattr(route, "methods"):
+                yield route
+
+    paths = set()
+    for route in _iter_routes(app.routes):
+        for method in (route.methods or ()):
+            if method in ("GET", "POST", "DELETE"):
+                paths.add((method, route.path))
+    for expected in [
+        ("GET", "/"), ("POST", "/auth/signup"), ("POST", "/auth/login"),
+        ("POST", "/predict"), ("POST", "/predict-explain"),
+        ("POST", "/predict-explain-curve"), ("POST", "/emi"),
+        ("GET", "/history"), ("GET", "/history/{app_id}"),
+        ("DELETE", "/history/{app_id}"), ("DELETE", "/me/data"),
+        ("GET", "/admin/stats"), ("GET", "/admin/users"), ("GET", "/admin/model"),
+        ("GET", "/_debug/client-ip"),
+    ]:
+        assert expected in paths, f"route missing: {expected}"

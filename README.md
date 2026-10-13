@@ -51,6 +51,39 @@ New:  UI section                 → waterfall chart + explanation + suggestions
 **New API endpoint:** `/predict-explain`
 Returns: prediction + top contributing features + plain-language reason + suggestions.
 
+### API endpoints
+
+| Method + Path | Auth | Purpose |
+|---|---|---|
+| `GET /` | no | Health check |
+| `POST /auth/signup` · `POST /auth/login` | no (login 5/min) | JWT accounts (signup always `role=user`) |
+| `POST /predict` | JWT | ML quick estimate (6 defaults assumed, disclosed) |
+| `POST /predict-explain` | JWT | Full ML verdict + SHAP reasons + suggestions |
+| `POST /predict-explain-curve` | JWT | Batched CIBIL sweep for the What-If simulator |
+| `POST /emi` | optional | EMI + affordability + amortization schedule |
+| `GET /history` · `GET /history/{id}` | JWT (own rows only) | Paginated application history |
+| `DELETE /history/{id}` · `DELETE /me/data` | JWT (own rows only) | Delete one / all own records |
+| `GET /admin/stats` · `/admin/users` · `/admin/model` | admin (DB-checked) | Portfolio stats, user list, model version |
+| `GET /_debug/client-ip` | flag-gated (404 unless enabled) | Proxy-hop diagnostics (temporary) |
+
+### Privacy
+
+Every `/predict` and `/predict-explain` call stores one row linked to your
+account: inputs, verdict, probability, reasons, suggestions — nothing else
+(no passwords, no tokens). See it under **My History** in the sidebar, delete
+records one by one (with confirmation) or wipe everything via **Delete all
+my data** (your account stays). There is no "export my data" download yet.
+
+### Creating an admin
+
+```bash
+# .env: ADMIN_EMAIL=you@example.com  ADMIN_PASSWORD=<strong password>
+python -m src.database.create_admin
+```
+Signup can never create admins (the `role` field in the request body is
+ignored). The API re-reads the role from the database on every admin call,
+so demoting a user takes effect immediately even for live tokens.
+
 ---
 
 ## ▶ How to Run Locally
