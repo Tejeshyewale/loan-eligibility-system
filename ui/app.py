@@ -740,7 +740,8 @@ if "token" in st.session_state:
             card_heading(
                 "zap", "Loan Application",
                 "Five-field estimate — same model as Explainable AI, with "
-                "typical values assumed for the details below.",
+                "typical values assumed for the details below. Missing details "
+                "are assumed conservatively; the full form may give a better result.",
             )
 
             col1, col2 = st.columns(2)
