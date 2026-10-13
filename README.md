@@ -124,6 +124,21 @@ Suggestions to improve eligibility:
 
 ---
 
+## ⚠️ Model honesty (read before trusting the metrics)
+
+`models/metrics.json` reports perfect 1.0 scores. Those numbers are measured
+on **synthetic, rule-generated demo data** (a depth-3 decision tree
+reaches 1.0 on unseen holdout) — they show the model recovered the
+generator's rule, **not** that it generalizes to real credit risk.
+See [MODEL_CARD.md](MODEL_CARD.md) and `docs/ML_AUDIT.md`. Every UI verdict
+and PDF report is labeled an estimate, never a bank decision.
+
+---
+
+## 🎯 Problem Statement
+
+---
+
 ## 🎯 Problem Statement
 
 Rural and MSME loan applicants are frequently rejected by banks/NBFCs without any explanation, leaving them unable to understand or fix the underlying issues. This creates a cycle of repeated rejections and financial exclusion.
