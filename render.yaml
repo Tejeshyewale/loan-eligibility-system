@@ -17,6 +17,9 @@ services:
         fromDatabase:
           name: loan-db
           property: connectionString
+      # Interpreter the pickles were built/tested under (venv: 3.12.10).
+      - key: PYTHON_VERSION
+        value: 3.12.10
 
 databases:
   - name: loan-db
