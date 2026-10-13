@@ -1,14 +1,17 @@
-fastapi
-uvicorn
-sqlalchemy
+# Runtime dependencies (fully pinned to the verified working set).
+# Pins with comments below are load-bearing on Windows hosts with
+# Application Control policies (fresh-wheel DLLs get blocked).
+fastapi==0.141.1
+uvicorn==0.54.0
+sqlalchemy==2.1.1
 # Pinned: fresh pandas>=3.0.5 native DLLs are blocked by Windows Application
 # Control on this host; 3.0.3 loads (same reason as the numba pin below).
 pandas==3.0.3
 scikit-learn==1.8.0
-python-jose
-streamlit
-requests 
-matplotlib 
+python-jose==3.5.0
+streamlit==1.64.0
+requests==2.34.2
+matplotlib==3.11.2
 fpdf2==2.8.8
 shap==0.52.0
 # Pinned: numba>=0.66 native DLL (_helperlib.pyd) is blocked by Windows
@@ -17,12 +20,11 @@ numba==0.61.2
 llvmlite==0.44.0
 numpy==2.2.6
 xgboost==3.2.0
-imbalanced-learn
-pyyaml
-pydantic
-pydantic-settings
-pytest
-httpx
-bcrypt
-slowapi
-python-dotenv
+imbalanced-learn==0.14.2
+pyyaml==6.0.3
+pydantic==2.13.5
+pydantic-settings==2.15.0
+httpx==0.28.1
+bcrypt==5.0.0
+slowapi==0.1.10
+python-dotenv==1.2.3
