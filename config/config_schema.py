@@ -30,9 +30,20 @@ class HeuristicPredictConfig(BaseModel):
     approval_min_score: int
 
 
+class QuickEstimateConfig(BaseModel):
+    """Defaults the /predict quick estimate assumes for uncollected fields."""
+    no_of_dependents: int
+    education: str
+    self_employed: str
+    loan_term: int
+    residential_assets_value: float
+    commercial_assets_value: float
+
+
 class AppConfig(BaseModel):
     suggestion_engine: SuggestionEngineConfig
     heuristic_predict: HeuristicPredictConfig
+    quick_estimate: QuickEstimateConfig
 
 
 DEFAULT_CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.yaml")

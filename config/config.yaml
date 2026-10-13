@@ -55,6 +55,18 @@ heuristic_predict:
   # Was: `approved = score >= 3` in src/api/predict.py
   approval_min_score: 3
 
+# Defaults assumed by the /predict quick estimate for the 6 fields it does
+# NOT collect. Documented and disclosed: the endpoint returns them back as
+# `assumed_defaults`, and the UI tells the user details were assumed.
+# Values = typical-applicant placeholders, not personalized data.
+quick_estimate:
+  no_of_dependents: 1
+  education: "Graduate"
+  self_employed: "No"
+  loan_term: 10
+  residential_assets_value: 500000
+  commercial_assets_value: 0
+
 # NOTE on src/core/explainability_engine.py: searched, no business/decision
 # thresholds found — only math (1.0 - P(rejected)), SHAP sign handling
 # (v >= 0), and field lists. Nothing to extract.
