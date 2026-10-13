@@ -16,5 +16,19 @@
                 306
             ]
         ]
+    },
+    "provenance": {
+        "data_sha256": "8156a057917cdc7f1bb086ee19fd3c2f022c2e3b1fb62aefd817da69b6c1b768",
+        "data_file": "data/validated/clean_loan_data.csv",
+        "seed": 42,
+        "date": "2026-10-13",
+        "note": "Metrics measured on synthetic rule-generated demo data (see MODEL_CARD.md).",
+        "library_versions": {
+            "scikit-learn": "1.8.0",
+            "xgboost": "3.2.0",
+            "pandas": "3.0.3",
+            "numpy": "2.2.6",
+            "imbalanced-learn": "0.14.2"
+        }
     }
 }
