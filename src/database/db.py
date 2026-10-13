@@ -13,13 +13,17 @@ from src.core.settings import DATABASE_URL
 
 
 def resolve_database_url(url: str = DATABASE_URL) -> str:
-    """Normalize a database URL for SQLAlchemy.
+    """Normalize a database URL for SQLAlchemy + the psycopg v3 driver.
 
-    Render/Heroku-style `postgres://...` is not a SQLAlchemy scheme;
-    rewrite it to `postgresql://...`. Everything else passes through.
+    - Render/Heroku-style ``postgres://...`` -> ``postgresql+psycopg://...``.
+    - Bare ``postgresql://...`` (SQLAlchemy's default dialect, which wants
+      psycopg2) -> ``postgresql+psycopg://...`` so we always use psycopg v3.
+    - ``postgresql+psycopg://...`` and ``sqlite://...`` pass through.
     """
     if url.startswith("postgres://"):
-        return "postgresql://" + url[len("postgres://"):]
+        return "postgresql+psycopg://" + url[len("postgres://"):]
+    if url.startswith("postgresql://"):
+        return "postgresql+psycopg://" + url[len("postgresql://"):]
     return url
 
 
