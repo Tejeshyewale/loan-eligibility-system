@@ -44,11 +44,17 @@ class ModelGovernanceConfig(BaseModel):
     allow_separable_data: bool
 
 
+class AffordabilityConfig(BaseModel):
+    ok_max_ratio: float
+    risky_max_ratio: float
+
+
 class AppConfig(BaseModel):
     suggestion_engine: SuggestionEngineConfig
     heuristic_predict: HeuristicPredictConfig
     quick_estimate: QuickEstimateConfig
     model_governance: ModelGovernanceConfig
+    affordability: AffordabilityConfig
 
 
 DEFAULT_CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.yaml")

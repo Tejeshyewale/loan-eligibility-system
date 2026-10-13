@@ -74,6 +74,12 @@ quick_estimate:
   residential_assets_value: 500000
   commercial_assets_value: 0
 
+# EMI affordability bands on (emi + existing EMIs) / monthly income.
+# <= ok_max_ratio: comfortable; <= risky_max_ratio: risky; above: not advisable.
+affordability:
+  ok_max_ratio: 0.40
+  risky_max_ratio: 0.50
+
 # Model governance tripwire (see tests/test_model_honesty.py).
 # allow_separable_data: the demo dataset is synthetically separable
 # (a depth-3 tree scores 1.0 on holdout). True ONLY while demo data is in
